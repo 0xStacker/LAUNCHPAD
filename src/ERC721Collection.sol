@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
 import {ERC721} from "@openzeppelin/token/ERC721/ERC721.sol";
+import {IERC721Collection} from "./IERC721Collection.sol";
 import {MerkleProof} from "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import {Phase} from "./PhaseLib.sol";
 
@@ -89,34 +90,6 @@ contract Drop is ERC721{
 
     fallback() external payable { }
 
-    error NotWhitelisted(address _address);
-    error InsufficientFunds(uint _cost);
-    error SoldOut(uint maxSupply);
-    error InvalidPhase(uint8 _phaseId);
-    error PhaseLimitExceeded(uint _phaseLimit);
-    error InvalidSupplyConfig();
-    error PurchaseFailed();
-    error NotCreator();
-    error NotOwner();
-    error SaleIsPaused();
-    error WithdrawalFailed();
-    error MaxPhaseLimit();
-    error AmountTooHigh();
-
-
-    event AddPresalePhase(string _phaseName, uint8 _phaseId);
-    event RemovePresalePhase(string _phaseName, uint8 _phaseId);
-    event BatchAirdrop(address[] _receipients, uint _amount);
-    event Purchase(address indexed _buyer, uint _tokenId, uint _amount);
-    event Airdrop(address indexed _to, uint _tokenId, uint _amount);
-    event WithdrawFunds(uint _amount);
-    event SetPhase(uint _phaseCount);
-    event ResumeSale();
-    event PublicMintEnabled();
-    event SalePaused();
-    event PublicMintDisabled();
-
-   
     // Enforce Creator priviledges
     modifier onlyCreator{
         if (msg.sender != owner){
@@ -126,9 +99,10 @@ contract Drop is ERC721{
 
     // Enforce token owner priviledges
     modifier tokenOwner(uint _tokenId){
-        if(msg.sender != ownerOf(_tokenId)){
-            revert NotOwner();}
-        _;
+        address _owner = _requireOwned(_tokenId);
+        if(_owner != msg.sender){
+            revert NotOwner();
+        }
     }
 
     // Block minting unless phase is active
@@ -284,6 +258,10 @@ contract Drop is ERC721{
     * Ensures total amount of NFT to be minted does not exceed MAX_SUPPLY.
     * */
     function batchAirdrop(address[] calldata _receipients, uint _amountPerAddress) external onlyCreator{
+        if(_receipients.length > BATCH_MINT_LIMIT){
+            revert AmountTooHigh();
+        }
+
         uint totalAmount = _amountPerAddress * _receipients.length;
         if (!_canMint(totalAmount)){
             revert SoldOut(MAX_SUPPLY);
@@ -355,17 +333,17 @@ contract Drop is ERC721{
     /**
     * @dev Allows owner to burn their nft
     */
-    function burn(uint _tokenId) external{
-        address _owner = _requireOwned(_tokenId);
-        if(_owner != _msgSender()){
-            revert NotOwner();
-        }
+    function burn(uint _tokenId) external tokenOwner(_tokenId){
         _burn(_tokenId);
     }
 
       // total supply
     function supply() external view returns(uint){
         return MAX_SUPPLY;
+    }
+
+    function contractOwner() external view rerturns(address){
+        return owner;
     }
  
     /**
@@ -424,9 +402,6 @@ contract Drop is ERC721{
     */
 
     function _mintNft(address _to, uint _amount) internal isPaused {  
-        if(_amount > BATCH_MINT_LIMIT){
-            revert AmountTooHigh();
-        }
         for(uint i; i < _amount; i++){
             tokenId += 1;
             totalMinted += 1;
