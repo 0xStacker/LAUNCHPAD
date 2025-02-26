@@ -42,6 +42,10 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
 
     // Sequential phase identities, 0 represents the public minting phase.
     uint8 internal phaseIds;
+    /**
+     * @dev All presale phase data.
+     * Maximum of 5 presale phases.
+     */
     PresalePhase[5] public mintPhases;
 
     mapping(uint8 => bool) public phaseCheck;
