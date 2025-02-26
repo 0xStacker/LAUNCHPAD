@@ -61,7 +61,8 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
     * @param _mintFee is the platform mint fee.
     * @param _price is the mint price per nft for public mint.
     * @param _maxPerWallet is the maximum nfts allowed to be minted by a wallet during the public mint
- 
+    * @param _baseUri is the base uri for the collection.
+    * @param _feeReceipient is the platform fee receipient. 
     */
 
     constructor(string memory _name,
