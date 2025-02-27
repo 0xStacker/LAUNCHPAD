@@ -3,6 +3,11 @@ pragma solidity 0.8.25;
 
 interface IERC721Collection{
 
+    enum Payees{
+        PLATFORM,
+        CREATOR
+    }
+
     struct PresalePhaseIn{
         uint8 maxPerAddress;
         string name;
@@ -19,7 +24,7 @@ interface IERC721Collection{
         uint startTime;
         uint endTime;
         uint price;
-        uint maxPerWallet;
+        uint8 maxPerWallet;
     }
 
     /**
@@ -40,7 +45,7 @@ interface IERC721Collection{
     error InsufficientFunds(uint _cost);
     error SoldOut(uint maxSupply);
     error InvalidPhase(uint8 _phaseId);
-    error PhaseLimitExceeded(uint _phaseLimit);
+    error PhaseLimitExceeded(uint8 _phaseLimit);
     error InvalidSupplyConfig();
     error PurchaseFailed();
     error NotCreator();
@@ -52,7 +57,6 @@ interface IERC721Collection{
 
 
     event AddPresalePhase(string _phaseName, uint8 _phaseId);
-    event RemovePresalePhase(string _phaseName, uint8 _phaseId);
     event BatchAirdrop(address[] _receipients, uint _amount);
     event Purchase(address indexed _buyer, uint _tokenId, uint _amount);
     event Airdrop(address indexed _to, uint _tokenId, uint _amount);

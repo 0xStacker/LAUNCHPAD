@@ -145,18 +145,22 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
 
     modifier limit(address _to, uint _amount, uint8 _phaseId){
         if(_phaseId == 0){
-            require(balanceOf(_to) + _amount <= _publicMint.maxPerWallet, "Mint Limit Exceeded");
+            uint8 publicMintLimit = _publicMint.maxPerWallet;
+            if(balanceOf(_to) + _amount > publicMintLimit){
+                revert PhaseLimitExceeded(publicMintLimit);
+            }
         }
         else{
             uint8 phaseLimit = mintPhases[_phaseId].maxPerAddress;
-            require(balanceOf(_to) + _amount <= phaseLimit, "Mint Limit Exceeded");
+            if(balanceOf(_to) + _amount > phaseLimit){
+                revert PhaseLimitExceeded(phaseLimit);
+            }
         }
         _;
     }
 
-    /**
-     * @dev see {IERC721Collection-mintPublic}
-     */
+    /// @dev see {IERC721Collection-mintPublic}
+     
     function mintPublic(uint _amount, address _to) external payable phaseActive(0) limit(_to, _amount, 0) isPaused nonReentrant{
         if (!_canMint(_amount)){
             revert SoldOut(maxSupply);
@@ -166,19 +170,17 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
             revert InsufficientFunds(totalCost);
         }
         _mintNft(_to, _amount);
-        _payoutPlatformFee(_amount);
-        _payCreator(_amount);
+        _payout(_amount);
         emit Purchase(_to, tokenId, _amount);
     }
 
     
-    /**
-     * @dev see {IERC721Collection-addPresalePhase}
-     */
+    /// @dev see {IERC721Collection-addPresalePhase}
     function addPresalePhase(PresalePhaseIn calldata _phase) external onlyCreator{
         if (phaseIds == PHASELIMIT){
             revert PhaseLimitExceeded(PHASELIMIT);  
         }
+
         uint8 phaseId = phaseIds + 1;
 
         PresalePhase memory phase = PresalePhase({
@@ -202,11 +204,10 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
             emit AddPresalePhase(_phase.name, phaseId);
     }
 
-    /**
-     * @dev see {IERC721Collection-reduceSupply}
-     */
+    /// @dev see {IERC721Collection-reduceSupply}
+     
     function reduceSupply(uint64 _newSupply) external onlyCreator{
-        if(_newSupply > totalMinted || _newSupply > maxSupply){
+        if(_newSupply < totalMinted || _newSupply > maxSupply){
             revert InvalidSupplyConfig();
         }
         maxSupply = _newSupply;
@@ -222,10 +223,8 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
     function getPublicMintData() external view returns(PublicMint memory){
         return _publicMint;
     }
-    
-    /***
-     * @dev see {IERC721Collection-airdrop}
-     */
+
+    /// @dev see {IERC721Collection-airdrop}
     function airdrop(address _to, uint _amount) external onlyCreator{
         if(!_canMint(_amount)){
             revert SoldOut(maxSupply);
@@ -234,9 +233,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
         emit Airdrop(_to, tokenId, _amount);
     }
 
-    /***
-     * @dev see {IERC721Collection-batchAirdrop}
-     */
+    ///@dev see {IERC721Collection-batchAirdrop}
     function batchAirdrop(address[] calldata _receipients, uint _amountPerAddress) external onlyCreator{
         if(_receipients.length > BATCH_MINT_LIMIT){
             revert AmountTooHigh();
@@ -296,13 +293,12 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
             revert NotWhitelisted(msg.sender);
         }
         _mintNft(msg.sender, _amount);
-        _payoutPlatformFee(_amount);
-        _payCreator(_amount);
+        _payout(_amount);
     }
 
-    /**
-    * @dev see {ERC721-_burn}
-    */
+
+    /// @dev see {ERC721-_burn}
+    
     function burn(uint _tokenId) external tokenOwner(_tokenId){
         _burn(_tokenId);
     }
@@ -321,6 +317,15 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
      */
     function contractOwner() external view returns(address){
         return owner;
+    }
+    
+    function computeShare(uint _amount, Payees _payee) public view returns(uint share){
+        if (_payee == Payees.PLATFORM){
+            share = mintFee * _amount;
+        }
+        else{
+            share = price * _amount;
+        }
     }
     /***
      * @dev see {ERC721-_baseURI}
@@ -342,7 +347,6 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
         }
     }
 
-
     /**
     * @dev Compute the cost of minting a certain amount of tokens.
     * @param _amount is the amount of tokens to be minted.
@@ -351,7 +355,6 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
         if (_phaseId == 0){
             return (price * _amount) + (mintFee * _amount);
         }
-
         else{
             return (mintPhases[_phaseId].price * _amount) + (mintFee * _amount);
         }
@@ -360,29 +363,22 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
 
     /***
      * @dev Payout platform fee
-     * @param _amount is the amount of ether to be paid to the platform as fee.
+     * @param _amount is the amount of nfts that was bought.
      */
 
-    function _payoutPlatformFee(uint _amount) internal{
-        uint fee = mintFee * _amount;
-        (bool success, ) = payable(_FEE_RECEIPIENT).call{value: fee}("");
-        if(!success){
-            revert PurchaseFailed();
-        }
+    function _payout(uint _amount) internal{
+        address platform = _FEE_RECEIPIENT;
+        address creator = owner;
+        uint platformShare = computeShare(_amount, Payees.PLATFORM);
+        uint creatorShare = computeShare(_amount, Payees.CREATOR);
+        (bool payPlatform, ) = payable(platform).call{value: platformShare}("");
+        if(!payPlatform){
+            revert PurchaseFailed();}
+        (bool payCreator, ) = payable(creator).call{value: creatorShare}("");
+        if(!payCreator){
+            revert PurchaseFailed();}
     }
 
-    /**
-     * @dev pay creator
-     * @param _amount is the amount of ether to be paid to creator after paying platform fee.
-     */
-    function _payCreator(uint _amount) internal{
-        uint fee = mintFee * _amount;
-        (bool success, ) = payable(owner).call{value: msg.value - fee}("");
-        if(!success){
-            revert PurchaseFailed();
-        }
-    }
-    
     /**
      * @dev Mint tokens to an address.
      * @param _to is the address of the receipient.
@@ -390,14 +386,14 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard{
     */
 
     function _mintNft(address _to, uint _amount) internal isPaused {  
-        uint64 tokenIdInc;
-        uint64 totalMintedInc;
+        uint64 tokenIdInc = tokenId;
+        uint64 totalMintedInc = totalMinted;
         for(uint i; i < _amount; i++){
             tokenIdInc += 1;
             totalMintedInc += 1;
-            _safeMint(_to, tokenId);
+            _safeMint(_to, tokenIdInc);
         }
-        tokenId += tokenIdInc;
-        totalMinted += totalMintedInc; 
+        tokenId = tokenIdInc;
+        totalMinted = totalMintedInc; 
     }
 }
