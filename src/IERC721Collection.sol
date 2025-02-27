@@ -40,7 +40,6 @@ interface IERC721Collection{
         uint phaseId;
     }
 
-
     error NotWhitelisted(address _address);
     error InsufficientFunds(uint _cost);
     error SoldOut(uint maxSupply);
@@ -55,24 +54,38 @@ interface IERC721Collection{
     error MaxPhaseLimit();
     error AmountTooHigh();
 
-
+    /// @dev Emitted after adding a new presale phase to the collection.
     event AddPresalePhase(string _phaseName, uint8 _phaseId);
+
+    /// @dev Emitted after a successful batch Airdrop.
     event BatchAirdrop(address[] _receipients, uint _amount);
+
+    /// @dev Emitted after a successful Purchase.
     event Purchase(address indexed _buyer, uint _tokenId, uint _amount);
+
+    /// @dev Emitted after a successful Airdrop.
     event Airdrop(address indexed _to, uint _tokenId, uint _amount);
+
+    /// @dev Emitted after funds are withdrawn from contract.
     event WithdrawFunds(uint _amount);
+
+    ///@dev Emitted after setting presale Phase.
     event SetPhase(uint _phaseCount);
+
+    /// @dev Emitted when the collection supply is reduced.
     event SupplyReduced(uint64 _newSupply);
+
+    /// @dev Emitted when the sale is resumed.
     event ResumeSale();
-    event PublicMintEnabled();
+
+    /// @dev Emitted when the sale is paused.
     event SalePaused();
-    event PublicMintDisabled();
 
     /**
     * @dev Public minting function.
-    * @param _amount is the amount of nfts to mint
-    * @param _to is the address to mint the tokens to
-    * @notice can only mint when public sale has started and the minting process is not paused by the creator
+    * @param _amount is the amount of nfts to mint.
+    * @param _to is the address to mint the tokens to.
+    * @notice can only mint when public sale has started and the minting process is not paused by the creator.
     * @notice minting is limited to the maximum amounts allowed on the public mint phase.
     */
 
