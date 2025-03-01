@@ -8,6 +8,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 
 /**
  * @dev Implementation of an ERC721 drop.
+ * @author 0xstacker "github.com/0xStacker"
  */
 contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     uint8 constant PHASELIMIT = 5;
@@ -103,7 +104,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
 
     // Enforce Creator priviledges
     modifier onlyCreator() {
-        if (msg.sender != owner) {
+        if (_msgSender() != owner) {
             revert NotCreator();
         }
         _;
@@ -112,7 +113,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     // Enforce token owner priviledges
     modifier tokenOwner(uint256 _tokenId) {
         address _owner = _requireOwned(_tokenId);
-        if (_owner != msg.sender) {
+        if (_owner != _msgSender()) {
             revert NotOwner();
         }
         _;
@@ -182,12 +183,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
 
     /// @dev see {IERC721Collection-addPresalePhase}
     function addPresalePhase(PresalePhaseIn calldata _phase) external onlyCreator {
-        if (phaseIds == PHASELIMIT) {
-            revert PhaseLimitExceeded(PHASELIMIT);
-        }
-
         uint8 phaseId = phaseIds + 1;
-
         PresalePhase memory phase = PresalePhase({
             name: _phase.name,
             startTime: block.timestamp + _phase.startTime,
@@ -204,9 +200,6 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         phaseCheck[phaseId] = true;
         _returnablePhases.push(phase);
         phaseIds += 1;
-        if (_returnablePhases.length > PHASELIMIT) {
-            revert MaxPhaseLimit();
-        }
         emit AddPresalePhase(_phase.name, phaseId);
     }
 
@@ -221,12 +214,12 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     // getter for presale phase data
-    function getPresaleData() external view returns (PresalePhase[] memory) {
+    function getPresaleConfig() external view returns (PresalePhase[] memory) {
         return _returnablePhases;
     }
 
     // getter for public mint data
-    function getPublicMintData() external view returns (PublicMint memory) {
+    function getPublicMintConfig() external view returns (PublicMint memory) {
         return _publicMint;
     }
 
@@ -287,7 +280,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         external
         payable
         phaseActive(_phaseId)
-        limit(msg.sender, _amount, _phaseId)
+        limit(_msgSender(), _amount, _phaseId)
         nonReentrant
         isPaused
     {
@@ -302,11 +295,11 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
             revert InsufficientFunds(totalCost);
         }
 
-        bool whitelisted = _proof.verify(mintPhases[_phaseId].merkleRoot, keccak256(abi.encodePacked(msg.sender)));
+        bool whitelisted = _proof.verify(mintPhases[_phaseId].merkleRoot, keccak256(abi.encodePacked(_msgSender())));
         if (!whitelisted) {
-            revert NotWhitelisted(msg.sender);
+            revert NotWhitelisted(_msgSender());
         }
-        _mintNft(msg.sender, _amount);
+        _mintNft(_msgSender(), _amount);
         _payout(_amount);
     }
 

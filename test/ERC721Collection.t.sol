@@ -13,7 +13,7 @@ contract ERC721CollectionTest is Test {
     address creator = address(123);
 
     function setUp() public {
-        deal(address(123), 200);
+        deal(creator, 200);
         collection =
             new Drop("Test Collection", "TST", 100, 0, 100, 10, 100, 2, creator, "https://example.com/", platform);
     }
@@ -26,22 +26,18 @@ contract ERC721CollectionTest is Test {
         uint256 previousPlatformBalance = platform.balance;
         console.log("Platform previous balance: ", previousPlatformBalance);
         vm.prank(_to);
-        if (_amount > publicMintLimit) {
-            vm.expectRevert(IERC721Collection.PhaseLimitExceeded.selector);
-            collection.mintPublic{value: _value}(_amount, address(_to));
-        } else {
-            collection.mintPublic{value: _value}(_amount, address(_to));
-            uint256 creatorNewBalance =
-                previousCreatorBalance + collection.computeShare(_amount, IERC721Collection.Payees.CREATOR);
-            uint256 platformNewBalance =
-                previousPlatformBalance + collection.computeShare(_amount, IERC721Collection.Payees.PLATFORM);
-            console.log("Creator new balance: ", creatorNewBalance);
-            console.log("Platform new balance: ", platformNewBalance);
-            assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
-            assertEq(collection.totalMinted(), previousTotalMinted + _amount);
-            assertEq(creator.balance, creatorNewBalance);
-            assertEq(platform.balance, platformNewBalance);
-        }
+
+        collection.mintPublic{value: _value}(_amount, address(_to));
+        uint256 creatorNewBalance =
+            previousCreatorBalance + collection.computeShare(_amount, IERC721Collection.Payees.CREATOR);
+        uint256 platformNewBalance =
+            previousPlatformBalance + collection.computeShare(_amount, IERC721Collection.Payees.PLATFORM);
+        console.log("Creator new balance: ", creatorNewBalance);
+        console.log("Platform new balance: ", platformNewBalance);
+        assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
+        assertEq(collection.totalMinted(), previousTotalMinted + _amount);
+        assertEq(creator.balance, creatorNewBalance);
+        assertEq(platform.balance, platformNewBalance);
     }
 
     function test_publicMint() public {
@@ -73,14 +69,14 @@ contract ERC721CollectionTest is Test {
             endTime: endTimeInSec,
             merkleRoot: bytes32(0)
         });
-        vm.prank(address(123));
+        vm.prank(creator);
         collection.addPresalePhase(phase);
-        assertEq(collection.getPresaleData().length, 1);
-        assertEq(collection.getPresaleData()[0].maxPerAddress, 2);
-        assertEq(collection.getPresaleData()[0].name, "Test Phase");
-        assertEq(collection.getPresaleData()[0].price, 100);
-        assertEq(collection.getPresaleData()[0].startTime, block.timestamp + startTimeInSec);
-        assertEq(collection.getPresaleData()[0].endTime, block.timestamp + endTimeInSec);
+        assertEq(collection.getPresaleConfig().length, 1);
+        assertEq(collection.getPresaleConfig()[0].maxPerAddress, 2);
+        assertEq(collection.getPresaleConfig()[0].name, "Test Phase");
+        assertEq(collection.getPresaleConfig()[0].price, 100);
+        assertEq(collection.getPresaleConfig()[0].startTime, block.timestamp + startTimeInSec);
+        assertEq(collection.getPresaleConfig()[0].endTime, block.timestamp + endTimeInSec);
     }
 
     function testFail_presaleLimit() public {
@@ -94,7 +90,7 @@ contract ERC721CollectionTest is Test {
             endTime: endTimeInSec,
             merkleRoot: bytes32(0)
         });
-        vm.startPrank(address(123));
+        vm.startPrank(creator);
         collection.addPresalePhase(phase);
         collection.addPresalePhase(phase);
         collection.addPresalePhase(phase);
@@ -105,7 +101,7 @@ contract ERC721CollectionTest is Test {
     }
 
     function testAirdrop() public {
-        vm.prank(address(123));
+        vm.prank(creator);
         collection.airdrop(address(234), 3);
         assertEq(collection.balanceOf(address(234)), 3);
         assertEq(collection.totalMinted(), 3);
@@ -116,7 +112,7 @@ contract ERC721CollectionTest is Test {
         addresses[0] = address(234);
         addresses[1] = address(345);
         addresses[2] = address(456);
-        vm.prank(address(123));
+        vm.prank(creator);
         collection.batchAirdrop(addresses, 2);
         assertEq(collection.balanceOf(address(234)), 2);
         assertEq(collection.balanceOf(address(345)), 2);
@@ -125,13 +121,13 @@ contract ERC721CollectionTest is Test {
     }
 
     function test_ReduceSupply() public {
-        vm.prank(address(123));
+        vm.prank(creator);
         collection.reduceSupply(50);
         assertEq(collection.maxSupply(), 50);
     }
 
     function testFail_ReduceSupply() public {
-        vm.prank(address(123));
+        vm.prank(creator);
         collection.reduceSupply(150);
     }
 
@@ -139,8 +135,26 @@ contract ERC721CollectionTest is Test {
         vm.deal(address(789), 250);
         vm.prank(address(789));
         _mintPublic(address(789), 2, singleMintCost * 2);
-        vm.prank(address(123));
+        vm.prank(creator);
         collection.reduceSupply(1);
         assertEq(collection.maxSupply(), 100);
+    }
+
+    function testFail_MintWhilePaused() public {
+        address minter = address(567);
+        vm.prank(creator);
+        collection.pauseSale();
+        deal(minter, 350);
+        _mintPublic(address(567), 2, singleMintCost * 2);
+    }
+
+    function testMintAfterResume() public {
+        address minter = address(567);
+        vm.startPrank(creator);
+        collection.pauseSale();
+        collection.resumeSale();
+        vm.stopPrank();
+        deal(minter, 350);
+        _mintPublic(address(567), 2, singleMintCost * 2);
     }
 }

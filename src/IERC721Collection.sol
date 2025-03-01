@@ -2,11 +2,13 @@
 pragma solidity 0.8.25;
 
 interface IERC721Collection {
+    /// @dev payees for the collection
     enum Payees {
         PLATFORM,
         CREATOR
     }
 
+    /// @dev Holds the input data for presale configuration
     struct PresalePhaseIn {
         uint8 maxPerAddress;
         string name;
@@ -27,7 +29,7 @@ interface IERC721Collection {
     }
 
     /**
-     * @dev Holds the details of a presale phase
+     * @dev Holds the deta of a presale phase after it has been assigned an identifier
      */
     struct PresalePhase {
         uint8 maxPerAddress;
@@ -39,18 +41,44 @@ interface IERC721Collection {
         uint256 phaseId;
     }
 
+    /// @dev Thrown when a user is not whitelisted for a presale phase
     error NotWhitelisted(address _address);
+
+    /// @dev Thrown when a user does not send enough ether to mint an amount of NFTs
     error InsufficientFunds(uint256 _cost);
+
+    /// @dev Thrown when a user tries to mint after collection has bee sold out
     error SoldOut(uint256 maxSupply);
+
+    /// @dev Thrown when a user tries to mint from a phase that is not in the mint configuration
     error InvalidPhase(uint8 _phaseId);
+
+    /// @dev Thrown when a user tries to mint more than the amount they're allowed to mint from a particular phase.
     error PhaseLimitExceeded(uint8 _phaseLimit);
+
+    /**
+     * @dev Thrown when creator tries to reduce supply to an amount that's either;
+     * - less than the total minted tokens or less than the total supply.
+     * - greater than initially set max supply.
+     */
     error InvalidSupplyConfig();
+
+    /// @dev Thrown whenever a purchase is attempted and fails.
     error PurchaseFailed();
+
+    /// @dev Thrown when a user tries to execute a function that is only allowed to be called by the creator.
     error NotCreator();
+
+    /// @dev Thrown when a user tries to execute a function that is only allowed to be called by the nft token owner.
     error NotOwner();
+
+    /// @dev Thrown whenever a mint is attempted while sale is paused.
     error SaleIsPaused();
+
+    /// @dev Thrown when creator attempts to withdraw funds from the contract and the withdrawal fails.
     error WithdrawalFailed();
-    error MaxPhaseLimit();
+
+    /// @dev Thrown when creator tries to airdrop a set number of people and the number exceeds the allowed limit.
     error AmountTooHigh();
 
     /// @dev Emitted after adding a new presale phase to the collection.
@@ -97,6 +125,11 @@ interface IERC721Collection {
     function addPresalePhase(PresalePhaseIn calldata _phase) external;
 
     /**
+     * @dev Returns an array containing details for each presale phase
+     */
+    function getPresaleConfig() external view returns (PresalePhase[] memory);
+
+    /**
      *
      * @dev Reduce the collection supply
      * @param _newSupply is the new supply to be set
@@ -128,13 +161,10 @@ interface IERC721Collection {
      * @param _amount is the amount of tokens to be minted.
      * @param _phaseId is the presale phase the user is attempting to mint for.
      * @notice If phase is not active, function reverts.
-     * @notice If amount exceeds the maximum allowed to be minted per walllet, function reverts.
+     * @notice If amount exceeds the phase limit, function reverts.
      */
     function whitelistMint(bytes32[] memory _proof, uint8 _amount, uint8 _phaseId) external payable;
 
-    /**
-     * '
-     * @dev Get the creator address
-     */
+    /// @dev Returns creator of the collection.
     function contractOwner() external view returns (address);
 }
