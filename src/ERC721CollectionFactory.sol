@@ -18,7 +18,7 @@ contract ERC721Factory {
         _;
     }
 
-    function _createCollection(
+    function createCollection(
         string memory _name,
         string memory _symbol,
         uint64 _maxSupply,
@@ -28,7 +28,7 @@ contract ERC721Factory {
         uint256 _price,
         uint8 _maxPerWallet,
         string memory _baseURI
-    ) internal returns (address) {
+    ) external onlyAdmin returns (address) {
         Drop collection = new Drop(
             _name,
             _symbol,
