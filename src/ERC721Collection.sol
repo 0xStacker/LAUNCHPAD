@@ -12,6 +12,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
  */
 
 contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
+    
     uint8 constant PHASELIMIT = 5;
 
     uint8 constant BATCH_MINT_LIMIT = 8;
