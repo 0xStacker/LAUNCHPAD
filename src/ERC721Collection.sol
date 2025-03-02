@@ -10,6 +10,7 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
  * @dev Implementation of an ERC721 drop.
  * @author 0xstacker "github.com/0xStacker"
  */
+
 contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     uint8 constant PHASELIMIT = 5;
 
@@ -40,10 +41,10 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
 
     PublicMint internal _publicMint;
 
-    // Sequential phase identities, 0 represents the public minting phase.
+    // Sequential phase identities
     uint8 internal phaseIds;
     /**
-     * @dev All presale phase data.
+     * @dev presale mint phases.
      * Maximum of 5 presale phases.
      */
     PresalePhase[5] public mintPhases;
