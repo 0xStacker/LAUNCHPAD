@@ -120,15 +120,15 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     // Block minting unless phase is active
-    modifier phaseActive(uint8 _phaseId) {
-        if (_phaseId == 0) {
+    modifier phaseActive(MintPhase _phase, uint8 _phaseId) {
+        if (_phase == MintPhase.PUBLIC) {
             require(
                 _publicMint.startTime <= block.timestamp && block.timestamp <= _publicMint.endTime, "Phase Inactive"
             );
         } else {
             uint256 phaseStartTime = mintPhases[_phaseId].startTime;
             uint256 phaseEndTime = mintPhases[_phaseId].endTime;
-            require(phaseStartTime <= block.timestamp && block.timestamp <= phaseEndTime, "Phase Inactive");
+            require(phaseStartTime <= block.timestamp && block.timestamp < phaseEndTime, "Phase Inactive");
         }
         _;
     }
@@ -144,8 +144,8 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     /**
      * @dev Enforce phase minting limit per address.
      */
-    modifier limit(address _to, uint256 _amount, uint8 _phaseId) {
-        if (_phaseId == 0) {
+    modifier limit(MintPhase _phase, address _to, uint256 _amount, uint8 _phaseId) {
+        if (_phase == MintPhase.PUBLIC) {
             uint8 publicMintLimit = _publicMint.maxPerWallet;
             if (balanceOf(_to) + _amount > publicMintLimit) {
                 revert PhaseLimitExceeded(publicMintLimit);
@@ -164,26 +164,25 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     function mintPublic(uint256 _amount, address _to)
         external
         payable
-        phaseActive(0)
-        limit(_to, _amount, 0)
+        phaseActive(MintPhase.PUBLIC, 0)
+        limit(MintPhase.PUBLIC, _to, _amount, 0)
         isPaused
         nonReentrant
     {
         if (!_canMint(_amount)) {
             revert SoldOut(maxSupply);
         }
-        uint256 totalCost = _getCost(0, _amount);
+        uint256 totalCost = _getCost(MintPhase.PUBLIC, 0, _amount);
         if (msg.value < totalCost) {
             revert InsufficientFunds(totalCost);
         }
         _mintNft(_to, _amount);
-        _payout(_amount);
+        _payout(_amount, 0);
         emit Purchase(_to, tokenId, _amount);
     }
 
     /// @dev see {IERC721Collection-addPresalePhase}
     function addPresalePhase(PresalePhaseIn calldata _phase) external onlyCreator {
-        uint8 phaseId = phaseIds + 1;
         PresalePhase memory phase = PresalePhase({
             name: _phase.name,
             startTime: block.timestamp + _phase.startTime,
@@ -191,16 +190,16 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
             maxPerAddress: _phase.maxPerAddress,
             price: _phase.price,
             merkleRoot: _phase.merkleRoot,
-            phaseId: phaseId
+            phaseId: phaseIds
         });
 
-        mintPhases[phaseId] = phase;
-        mintPhases[phaseId].startTime = mintPhases[phaseId].startTime + block.timestamp;
-        mintPhases[phaseId].endTime = mintPhases[phaseId].endTime + block.timestamp;
-        phaseCheck[phaseId] = true;
+        mintPhases[phase.phaseId] = phase;
+        mintPhases[phase.phaseId].startTime = phase.startTime + block.timestamp;
+        mintPhases[phase.phaseId].endTime = phase.endTime + block.timestamp;
+        phaseCheck[phase.phaseId] = true;
         _returnablePhases.push(phase);
         phaseIds += 1;
-        emit AddPresalePhase(_phase.name, phaseId);
+        emit AddPresalePhase(_phase.name, phase.phaseId);
     }
 
     /// @dev see {IERC721Collection-reduceSupply}
@@ -279,8 +278,8 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     function whitelistMint(bytes32[] memory _proof, uint8 _amount, uint8 _phaseId)
         external
         payable
-        phaseActive(_phaseId)
-        limit(_msgSender(), _amount, _phaseId)
+        phaseActive(MintPhase.PRESALE, _phaseId)
+        limit(MintPhase.PRESALE, _msgSender(), _amount, _phaseId)
         nonReentrant
         isPaused
     {
@@ -290,17 +289,17 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         if (!_canMint(_amount)) {
             revert SoldOut(maxSupply);
         }
-        uint256 totalCost = _getCost(_phaseId, _amount);
+        uint256 totalCost = _getCost(MintPhase.PRESALE, _phaseId, _amount);
         if (msg.value < totalCost) {
             revert InsufficientFunds(totalCost);
         }
-
-        bool whitelisted = _proof.verify(mintPhases[_phaseId].merkleRoot, keccak256(abi.encodePacked(_msgSender())));
+        bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(_msgSender()))));
+        bool whitelisted = _proof.verify(mintPhases[_phaseId].merkleRoot, leaf);
         if (!whitelisted) {
             revert NotWhitelisted(_msgSender());
         }
         _mintNft(_msgSender(), _amount);
-        _payout(_amount);
+        _payout(_amount, _phaseId);
     }
 
     /// @dev see {ERC721-_burn}
@@ -326,11 +325,12 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         return owner;
     }
 
-    function computeShare(uint256 _amount, Payees _payee) public view returns (uint256 share) {
+    function computeShare(uint256 _amount, uint8 _phaseId, Payees _payee) public view returns (uint256 share) {
         if (_payee == Payees.PLATFORM) {
             share = mintFee * _amount;
         } else {
-            share = price * _amount;
+            uint256 _price = mintPhases[_phaseId].price;
+            share = _price * _amount;
         }
     }
     /**
@@ -359,8 +359,8 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      * @dev Compute the cost of minting a certain amount of tokens.
      * @param _amount is the amount of tokens to be minted.
      */
-    function _getCost(uint8 _phaseId, uint256 _amount) public view returns (uint256 cost) {
-        if (_phaseId == 0) {
+    function _getCost(MintPhase _phase, uint8 _phaseId, uint256 _amount) public view returns (uint256 cost) {
+        if (_phase == MintPhase.PUBLIC) {
             return (price * _amount) + (mintFee * _amount);
         } else {
             return (mintPhases[_phaseId].price * _amount) + (mintFee * _amount);
@@ -371,12 +371,13 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      *
      * @dev Payout platform fee
      * @param _amount is the amount of nfts that was bought.
+     * @param _phaseId is the mint phase in which the nft was bought.
      */
-    function _payout(uint256 _amount) internal {
+    function _payout(uint256 _amount, uint8 _phaseId) internal {
         address platform = _FEE_RECEIPIENT;
         address creator = owner;
-        uint256 platformShare = computeShare(_amount, Payees.PLATFORM);
-        uint256 creatorShare = computeShare(_amount, Payees.CREATOR);
+        uint256 platformShare = computeShare(_amount, 0, Payees.PLATFORM);
+        uint256 creatorShare = computeShare(_amount, _phaseId, Payees.CREATOR);
         (bool payPlatform,) = payable(platform).call{value: platformShare}("");
         if (!payPlatform) {
             revert PurchaseFailed();

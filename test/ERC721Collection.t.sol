@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
@@ -11,6 +11,19 @@ contract ERC721CollectionTest is Test {
     uint256 publicMintLimit = 2;
     address platform = address(234);
     address creator = address(123);
+    bytes32[] proof = [
+        bytes32(0xad67874866783b4129c60d23995daac0c837c320b38a19d1915e7fa4586bcefc),
+        bytes32(0xf0718c9b19326d1812c0d459d3507b9122280148d3f90f4f3c97c0e6a9c946e5)
+    ];
+
+    IERC721Collection.PresalePhaseIn public presalePhaseConfig1 = IERC721Collection.PresalePhaseIn({
+        maxPerAddress: 2,
+        name: "Test Phase",
+        price: 50,
+        startTime: 0,
+        endTime: 100,
+        merkleRoot: bytes32(0x9c8ddc6ab231bcd108eb0758933a2bb40bc8dad8fbae0261383da40014080906)
+    });
 
     function setUp() public {
         deal(creator, 200);
@@ -29,9 +42,9 @@ contract ERC721CollectionTest is Test {
 
         collection.mintPublic{value: _value}(_amount, address(_to));
         uint256 creatorNewBalance =
-            previousCreatorBalance + collection.computeShare(_amount, IERC721Collection.Payees.CREATOR);
+            previousCreatorBalance + collection.computeShare(_amount, 0, IERC721Collection.Payees.CREATOR);
         uint256 platformNewBalance =
-            previousPlatformBalance + collection.computeShare(_amount, IERC721Collection.Payees.PLATFORM);
+            previousPlatformBalance + collection.computeShare(_amount, 0, IERC721Collection.Payees.PLATFORM);
         console.log("Creator new balance: ", creatorNewBalance);
         console.log("Platform new balance: ", platformNewBalance);
         assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
@@ -61,20 +74,12 @@ contract ERC721CollectionTest is Test {
     function test_addPresale() public {
         uint256 startTimeInSec = 0;
         uint256 endTimeInSec = 100;
-        IERC721Collection.PresalePhaseIn memory phase = IERC721Collection.PresalePhaseIn({
-            maxPerAddress: 2,
-            name: "Test Phase",
-            price: 100,
-            startTime: startTimeInSec,
-            endTime: endTimeInSec,
-            merkleRoot: bytes32(0)
-        });
         vm.prank(creator);
-        collection.addPresalePhase(phase);
+        collection.addPresalePhase(presalePhaseConfig1);
         assertEq(collection.getPresaleConfig().length, 1);
         assertEq(collection.getPresaleConfig()[0].maxPerAddress, 2);
         assertEq(collection.getPresaleConfig()[0].name, "Test Phase");
-        assertEq(collection.getPresaleConfig()[0].price, 100);
+        assertEq(collection.getPresaleConfig()[0].price, 50);
         assertEq(collection.getPresaleConfig()[0].startTime, block.timestamp + startTimeInSec);
         assertEq(collection.getPresaleConfig()[0].endTime, block.timestamp + endTimeInSec);
     }
@@ -156,5 +161,64 @@ contract ERC721CollectionTest is Test {
         vm.stopPrank();
         deal(minter, 350);
         _mintPublic(address(567), 2, singleMintCost * 2);
+    }
+
+    function _mintWhitelist(address _to, uint8 _amount, uint8 _phaseId, uint256 _value) internal {
+        uint256 previousBalance = collection.balanceOf(address(_to));
+        uint256 previousTotalMinted = collection.totalMinted();
+        uint256 previousCreatorBalance = creator.balance;
+        console.log("Creator previous balance: ", previousCreatorBalance);
+        uint256 previousPlatformBalance = platform.balance;
+        console.log("Platform previous balance: ", previousPlatformBalance);
+        vm.startPrank(_to);
+        skip(collection.getPresaleConfig()[0].startTime);
+        collection.whitelistMint{value: _value}(proof, _amount, _phaseId);
+        vm.stopPrank();
+        uint256 creatorNewBalance =
+            previousCreatorBalance + collection.computeShare(_amount, _phaseId, IERC721Collection.Payees.CREATOR);
+        uint256 platformNewBalance =
+            previousPlatformBalance + collection.computeShare(_amount, _phaseId, IERC721Collection.Payees.PLATFORM);
+        console.log("Creator new balance: ", creatorNewBalance);
+        console.log("Platform new balance: ", platformNewBalance);
+        assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
+        assertEq(collection.totalMinted(), previousTotalMinted + _amount);
+        assertEq(creator.balance, creatorNewBalance);
+        assertEq(platform.balance, platformNewBalance);
+    }
+
+    function testWhitelistMint() public {
+        address minter = address(345);
+        vm.startPrank(creator);
+        collection.addPresalePhase(presalePhaseConfig1);
+        vm.stopPrank();
+        deal(minter, 350);
+        _mintWhitelist(minter, 1, 0, 70);
+    }
+
+    function testWhitelistMintMultiple() public {
+        address minter = address(345);
+        vm.startPrank(creator);
+        collection.addPresalePhase(presalePhaseConfig1);
+        vm.stopPrank();
+        deal(minter, 350);
+        _mintWhitelist(minter, 2, 0, 120);
+    }
+
+    function testFailNonWhitelistedMinter() public {
+        address minter = address(999);
+        vm.startPrank(creator);
+        collection.addPresalePhase(presalePhaseConfig1);
+        vm.stopPrank();
+        deal(minter, 350);
+        _mintWhitelist(minter, 1, 0, 70);
+    }
+
+    function testFailWhitelistMintLimit() public {
+        address minter = address(345);
+        vm.startPrank(creator);
+        collection.addPresalePhase(presalePhaseConfig1);
+        vm.stopPrank();
+        deal(minter, 350);
+        _mintWhitelist(minter, 3, 0, 180);
     }
 }

@@ -8,6 +8,11 @@ interface IERC721Collection {
         CREATOR
     }
 
+    enum MintPhase {
+        PUBLIC,
+        PRESALE
+    }
+
     /// @dev Holds the input data for presale configuration
     struct PresalePhaseIn {
         uint8 maxPerAddress;
@@ -22,10 +27,10 @@ interface IERC721Collection {
      * @dev Holds the details of the public/general mint phase
      */
     struct PublicMint {
+        uint8 maxPerWallet;
         uint256 startTime;
         uint256 endTime;
         uint256 price;
-        uint8 maxPerWallet;
     }
 
     /**
@@ -33,12 +38,12 @@ interface IERC721Collection {
      */
     struct PresalePhase {
         uint8 maxPerAddress;
+        uint8 phaseId;
         string name;
         uint256 price;
         uint256 startTime;
         uint256 endTime;
         bytes32 merkleRoot;
-        uint256 phaseId;
     }
 
     /// @dev Thrown when a user is not whitelisted for a presale phase
