@@ -4,3 +4,6 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "lib/merkle-tree"]
+	path = lib/merkle-tree
+	url = https://github.com/OpenZeppelin/merkle-tree
