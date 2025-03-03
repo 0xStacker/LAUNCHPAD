@@ -17,12 +17,8 @@ contract ERC721CollectionTest is Test {
         bytes32(0xf0718c9b19326d1812c0d459d3507b9122280148d3f90f4f3c97c0e6a9c946e5)
     ];
 
-    IERC721Collection.PublicMint public publicMintConfig = IERC721Collection.PublicMint({
-        maxPerWallet: 2,
-        startTime: 0,
-        endTime: 100,
-        price: 100
-    });
+    IERC721Collection.PublicMint public publicMintConfig =
+        IERC721Collection.PublicMint({maxPerWallet: 2, startTime: 0, endTime: 100, price: 100});
 
     IERC721Collection.PresalePhaseIn public presalePhaseConfig1 = IERC721Collection.PresalePhaseIn({
         maxPerAddress: 2,
@@ -35,8 +31,17 @@ contract ERC721CollectionTest is Test {
 
     function setUp() public {
         deal(creator, 200);
-        collection =
-            new Drop("Test Collection", "TST", 4, publicMintConfig, 10, creator, "https://example.com/", platform, lockedTillMintOut);
+        collection = new Drop(
+            "Test Collection",
+            "TST",
+            4,
+            publicMintConfig,
+            10,
+            creator,
+            "https://example.com/",
+            platform,
+            lockedTillMintOut
+        );
     }
 
     function _mintPublic(address _to, uint256 _amount, uint256 _value) internal {
@@ -229,14 +234,14 @@ contract ERC721CollectionTest is Test {
         deal(minter, 350);
         _mintWhitelist(minter, 3, 0, 180);
     }
-    
+
     function testFail_TradeWhileNotSoldOut() public {
         address minter = address(345);
         deal(minter, 350);
         _mintPublic(minter, 1, singleMintCost);
         collection.safeTransferFrom(minter, address(456), 1);
     }
-    
+
     function testTradingAfterSoldOut() public {
         address minter1 = address(345);
         address minter2 = address(456);
@@ -255,4 +260,3 @@ contract ERC721CollectionTest is Test {
         vm.stopPrank();
     }
 }
-
