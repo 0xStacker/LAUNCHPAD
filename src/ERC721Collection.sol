@@ -10,26 +10,33 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
  * @dev Implementation of an ERC721 drop.
  * @author 0xstacker "github.com/0xStacker"
  */
-
 contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
-    
+    /// @dev Maximum number of presale phases that can be added.
     uint8 constant PHASELIMIT = 5;
 
+    /// @dev Maximum number of tokens that can be minted in a single transaction.
     uint8 constant BATCH_MINT_LIMIT = 8;
 
+    /// @dev Collection owner
     address public immutable owner;
 
+    /// @dev Platform fee receipient
     address private immutable _FEE_RECEIPIENT;
 
+    /// @dev If set to true, pauses minting of tokens.
     bool public paused;
 
+    /// @dev If set to true, prevents trading of tokens until minting is complete.
+    bool public lockedTillMintOut;
+
+    /// @notice Maximum supply of collection
     uint64 public maxSupply;
 
-    uint64 private tokenId;
+    /// @notice Current token id
+    uint64 private _tokenId;
 
-    uint64 public totalMinted;
-
-    uint256 private immutable price;
+    /// @notice Total number of minted tokens
+    uint64 private _totalMinted;
 
     // uint private constant royalty;
 
@@ -40,10 +47,12 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      */
     uint256 public immutable mintFee;
 
-    PublicMint internal _publicMint;
+    /// @dev public mint configuration
+    PublicMint private _publicMint;
 
     // Sequential phase identities
     uint8 internal phaseIds;
+
     /**
      * @dev presale mint phases.
      * Maximum of 5 presale phases.
@@ -61,12 +70,9 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      * @param _name is the name of the collection.
      * @param _symbol is the collection symbol.
      * @param _maxSupply is the maximum supply of the collection.
-     * @param _startTime is the start time for the public mint.
-     * @param _duration is the mint duration for the public mint.
      * @param _owner is the address of the collection owner
-     * @param _mintFee is the platform mint fee.
-     * @param _price is the mint price per nft for public mint.
-     * @param _maxPerWallet is the maximum nfts allowed to be minted by a wallet during the public mint
+     * @param _publicMintConfig is the public mint configuration.
+     * @param _mintFee is the platform mint fee
      * @param _baseUri is the base uri for the collection.
      * @param _feeReceipient is the platform fee receipient.
      */
@@ -74,30 +80,26 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         string memory _name,
         string memory _symbol,
         uint64 _maxSupply,
-        uint256 _startTime,
-        uint256 _duration,
+        PublicMint memory _publicMintConfig,
         uint256 _mintFee,
-        uint256 _price,
-        uint8 _maxPerWallet,
         address _owner,
         string memory _baseUri,
-        address _feeReceipient
+        address _feeReceipient,
+        bool _lockedTillMintOut
     ) ERC721(_name, _symbol) ReentrancyGuard() {
         maxSupply = _maxSupply;
-        price = _price;
-        // Ensure that owner is an EOA and not zero address
+        // Ensure that owner is not a contract
         require(_owner.code.length == 0 && _owner != address(0), "Invalid Adress");
         owner = _owner;
+
         if (_feeReceipient == address(0)) {
             revert ERC721InvalidReceiver(address(0));
         }
         _FEE_RECEIPIENT = _feeReceipient;
         mintFee = _mintFee;
-        _publicMint.startTime = block.timestamp + _startTime;
-        _publicMint.endTime = block.timestamp + _startTime + _duration;
-        _publicMint.price = _price;
-        _publicMint.maxPerWallet = _maxPerWallet;
+        _publicMint = _publicMintConfig;
         baseURI = _baseUri;
+        lockedTillMintOut = _lockedTillMintOut;
     }
 
     receive() external payable {}
@@ -113,10 +115,10 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     // Enforce token owner priviledges
-    modifier tokenOwner(uint256 _tokenId) {
+    modifier tokenOwner(uint256 tokenId) {
         address _owner = _requireOwned(_tokenId);
         if (_owner != _msgSender()) {
-            revert NotOwner();
+            revert NotOwner(_tokenId);
         }
         _;
     }
@@ -161,8 +163,19 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         _;
     }
 
-    /// @dev see {IERC721Collection-mintPublic}
+    /**
+     * @dev Control token treading
+     * @notice Prevents trading of tokens until minting is complete if {lockedTillMintOut} is set to true.
+     */
+    modifier canTradeToken() {
+        bool mintedOut = maxSupply == _totalMinted;
+        if (lockedTillMintOut && !mintedOut) {
+            revert TradingLocked();
+        }
+        _;
+    }
 
+    /// @dev see {IERC721Collection-mintPublic}
     function mintPublic(uint256 _amount, address _to)
         external
         payable
@@ -180,7 +193,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         }
         _mintNft(_to, _amount);
         _payout(_amount, 0);
-        emit Purchase(_to, tokenId, _amount);
+        emit Purchase(_to, _tokenId, _amount);
     }
 
     /// @dev see {IERC721Collection-addPresalePhase}
@@ -207,7 +220,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     /// @dev see {IERC721Collection-reduceSupply}
 
     function reduceSupply(uint64 _newSupply) external onlyCreator {
-        if (_newSupply < totalMinted || _newSupply > maxSupply) {
+        if (_newSupply < _totalMinted || _newSupply > maxSupply) {
             revert InvalidSupplyConfig();
         }
         maxSupply = _newSupply;
@@ -230,7 +243,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
             revert SoldOut(maxSupply);
         }
         _mintNft(_to, _amount);
-        emit Airdrop(_to, tokenId, _amount);
+        emit Airdrop(_to, _tokenId, _amount);
     }
 
     ///@dev see {IERC721Collection-batchAirdrop}
@@ -306,8 +319,8 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
 
     /// @dev see {ERC721-_burn}
 
-    function burn(uint256 _tokenId) external tokenOwner(_tokenId) {
-        _burn(_tokenId);
+    function burn(uint256 tokenId_) external tokenOwner(tokenId_) {
+        _burn(tokenId_);
     }
 
     // total supply
@@ -350,7 +363,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      * @notice Ensures that minting _amount tokens does not cause the total minted tokens to exceed max supply.
      */
     function _canMint(uint256 _amount) internal view returns (bool) {
-        if (totalMinted + _amount > maxSupply) {
+        if (_totalMinted + _amount > maxSupply) {
             return false;
         } else {
             return true;
@@ -363,7 +376,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      */
     function _getCost(MintPhase _phase, uint8 _phaseId, uint256 _amount) public view returns (uint256 cost) {
         if (_phase == MintPhase.PUBLIC) {
-            return (price * _amount) + (mintFee * _amount);
+            return (_publicMint.price * _amount) + (mintFee * _amount);
         } else {
             return (mintPhases[_phaseId].price * _amount) + (mintFee * _amount);
         }
@@ -396,14 +409,34 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      * @param _amount is the amount of tokens to be minted.
      */
     function _mintNft(address _to, uint256 _amount) internal isPaused {
-        uint64 tokenIdInc = tokenId;
-        uint64 totalMintedInc = totalMinted;
+        uint64 tokenIdInc = _tokenId;
+        uint64 totalMintedInc = _totalMinted;
         for (uint256 i; i < _amount; i++) {
             tokenIdInc += 1;
             totalMintedInc += 1;
             _safeMint(_to, tokenIdInc);
         }
-        tokenId = tokenIdInc;
-        totalMinted = totalMintedInc;
+        _tokenId = tokenIdInc;
+        _totalMinted = totalMintedInc;
+    }
+
+    function totalMinted() public view returns (uint64) {
+        return _totalMinted;
+    }
+
+    /**
+     * @dev see {ERC721-safeTransferFrom}
+     */
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory _data)
+        public
+        override
+        canTradeToken
+    {
+        super.safeTransferFrom(from, to, tokenId, _data);
+    }
+
+    /// @dev see {ERC721-transferFrom}
+    function transferFrom(address from, address to, uint256 tokenId) public override canTradeToken {
+        super.transferFrom(from, to, tokenId);
     }
 }

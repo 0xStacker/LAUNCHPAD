@@ -49,6 +49,9 @@ interface IERC721Collection {
     /// @dev Thrown when a user is not whitelisted for a presale phase
     error NotWhitelisted(address _address);
 
+    /// @dev Thrown when a user tries to trade an NFT while collection is not sold out yet.
+    error TradingLocked();
+
     /// @dev Thrown when a user does not send enough ether to mint an amount of NFTs
     error InsufficientFunds(uint256 _cost);
 
@@ -75,7 +78,7 @@ interface IERC721Collection {
     error NotCreator();
 
     /// @dev Thrown when a user tries to execute a function that is only allowed to be called by the nft token owner.
-    error NotOwner();
+    error NotOwner(uint256 _tokenId);
 
     /// @dev Thrown whenever a mint is attempted while sale is paused.
     error SaleIsPaused();
