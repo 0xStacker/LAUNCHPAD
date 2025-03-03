@@ -30,7 +30,6 @@ contract ERC721CollectionTest is Test {
     });
 
     function setUp() public {
-        deal(creator, 200);
         collection = new Drop(
             "Test Collection",
             "TST",
@@ -55,9 +54,9 @@ contract ERC721CollectionTest is Test {
 
         collection.mintPublic{value: _value}(_amount, address(_to));
         uint256 creatorNewBalance =
-            previousCreatorBalance + collection.computeShare(_amount, 0, IERC721Collection.Payees.CREATOR);
+            previousCreatorBalance + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.CREATOR);
         uint256 platformNewBalance =
-            previousPlatformBalance + collection.computeShare(_amount, 0, IERC721Collection.Payees.PLATFORM);
+            previousPlatformBalance + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.PLATFORM);
         console.log("Creator new balance: ", creatorNewBalance);
         console.log("Platform new balance: ", platformNewBalance);
         assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
@@ -188,9 +187,9 @@ contract ERC721CollectionTest is Test {
         collection.whitelistMint{value: _value}(proof, _amount, _phaseId);
         vm.stopPrank();
         uint256 creatorNewBalance =
-            previousCreatorBalance + collection.computeShare(_amount, _phaseId, IERC721Collection.Payees.CREATOR);
+            previousCreatorBalance + collection.computeShare(IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.CREATOR);
         uint256 platformNewBalance =
-            previousPlatformBalance + collection.computeShare(_amount, _phaseId, IERC721Collection.Payees.PLATFORM);
+            previousPlatformBalance + collection.computeShare(IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.PLATFORM);
         console.log("Creator new balance: ", creatorNewBalance);
         console.log("Platform new balance: ", platformNewBalance);
         assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);

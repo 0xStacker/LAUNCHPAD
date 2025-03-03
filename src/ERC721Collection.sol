@@ -5,6 +5,7 @@ import {ERC721} from "@openzeppelin/token/ERC721/ERC721.sol";
 import {IERC721Collection} from "./IERC721Collection.sol";
 import {MerkleProof} from "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
+import {BasisPointsCalculator} from "./BpsLib.sol";
 
 /**
  * @dev Implementation of an ERC721 drop.
@@ -38,12 +39,13 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     /// @notice Total number of minted tokens
     uint64 private _totalMinted;
 
-    // uint private constant royalty;
+    /// @dev Percentage paid to the platform by creator
+    uint internal immutable SALES_FEE_BPS = 10_00;
 
     string baseURI;
 
     /**
-     * @dev Platform mint fee
+     * @dev Fee paid to the platform per nft mint by user
      */
     uint256 public immutable mintFee;
 
@@ -64,6 +66,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     PresalePhase[] internal _returnablePhases;
 
     using MerkleProof for bytes32[];
+    using BasisPointsCalculator for uint256;
 
     /**
      * @dev Initialize contract by setting necessary data.
@@ -192,7 +195,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
             revert InsufficientFunds(totalCost);
         }
         _mintNft(_to, _amount);
-        _payout(_amount, 0);
+        _payout(MintPhase.PUBLIC, _amount, 0);
         emit Purchase(_to, _tokenId, _amount);
     }
 
@@ -314,7 +317,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
             revert NotWhitelisted(_msgSender());
         }
         _mintNft(_msgSender(), _amount);
-        _payout(_amount, _phaseId);
+        _payout(MintPhase.PRESALE, _amount, _phaseId);
     }
 
     /// @dev see {ERC721-_burn}
@@ -340,19 +343,38 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         return owner;
     }
 
-    function computeShare(uint256 _amount, uint8 _phaseId, Payees _payee) public view returns (uint256 share) {
+    function computeShare(MintPhase _phase, uint256 _amount, uint8 _phaseId, Payees _payee) public view returns (uint256 share) {
         if (_payee == Payees.PLATFORM) {
-            share = mintFee * _amount;
+            if (_phase == MintPhase.PUBLIC){
+                uint _mintFee = mintFee * _amount;
+                uint value = _publicMint.price * _amount;
+                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
+                share = _mintFee + _salesFee;
+            }
+            else{
+                uint _mintFee = mintFee * _amount;
+                uint256 _price = mintPhases[_phaseId].price;
+                uint256 value = _price * _amount;
+                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS); 
+                share = _mintFee + _salesFee;
+            }
+
         } else {
-            uint256 _price = mintPhases[_phaseId].price;
-            share = _price * _amount;
+            if (_phase == MintPhase.PUBLIC){
+                uint value = _publicMint.price * _amount;
+                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
+                share = value - _salesFee;
+            }
+            else{
+                uint256 _price = mintPhases[_phaseId].price;
+                uint256 value = _price * _amount;
+                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS); 
+                share = value - _salesFee;
+            }            
         }
     }
-    /**
-     *
-     * @dev see {ERC721-_baseURI}
-     */
 
+    ///@dev see {ERC721-_baseURI}
     function _baseURI() internal view override returns (string memory) {
         return baseURI;
     }
@@ -388,11 +410,11 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      * @param _amount is the amount of nfts that was bought.
      * @param _phaseId is the mint phase in which the nft was bought.
      */
-    function _payout(uint256 _amount, uint8 _phaseId) internal {
+    function _payout(MintPhase _phase, uint256 _amount, uint8 _phaseId) internal {
         address platform = _FEE_RECEIPIENT;
         address creator = owner;
-        uint256 platformShare = computeShare(_amount, 0, Payees.PLATFORM);
-        uint256 creatorShare = computeShare(_amount, _phaseId, Payees.CREATOR);
+        uint256 platformShare = computeShare(_phase, _amount, 0, Payees.PLATFORM);
+        uint256 creatorShare = computeShare(_phase, _amount, _phaseId, Payees.CREATOR);
         (bool payPlatform,) = payable(platform).call{value: platformShare}("");
         if (!payPlatform) {
             revert PurchaseFailed();
