@@ -29,6 +29,15 @@ contract ERC721CollectionTest is Test {
         merkleRoot: bytes32(0x9c8ddc6ab231bcd108eb0758933a2bb40bc8dad8fbae0261383da40014080906)
     });
 
+    IERC721Collection.PresalePhaseIn public presalePhaseConfig2 = IERC721Collection.PresalePhaseIn({
+        maxPerAddress: 2,
+        name: "Test Phase 2",
+        price: 150,
+        startTime: 0,
+        endTime: 50,
+        merkleRoot: bytes32(0x9c8ddc6ab231bcd108eb0758933a2bb40bc8dad8fbae0261383da40014080906)
+    });
+
     function setUp() public {
         collection = new Drop(
             "Test Collection",
@@ -53,10 +62,10 @@ contract ERC721CollectionTest is Test {
         vm.prank(_to);
 
         collection.mintPublic{value: _value}(_amount, address(_to));
-        uint256 creatorNewBalance =
-            previousCreatorBalance + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.CREATOR);
-        uint256 platformNewBalance =
-            previousPlatformBalance + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.PLATFORM);
+        uint256 creatorNewBalance = previousCreatorBalance
+            + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.CREATOR);
+        uint256 platformNewBalance = previousPlatformBalance
+            + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.PLATFORM);
         console.log("Creator new balance: ", creatorNewBalance);
         console.log("Platform new balance: ", platformNewBalance);
         assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
@@ -186,10 +195,14 @@ contract ERC721CollectionTest is Test {
         skip(collection.getPresaleConfig()[0].startTime);
         collection.whitelistMint{value: _value}(proof, _amount, _phaseId);
         vm.stopPrank();
-        uint256 creatorNewBalance =
-            previousCreatorBalance + collection.computeShare(IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.CREATOR);
-        uint256 platformNewBalance =
-            previousPlatformBalance + collection.computeShare(IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.PLATFORM);
+        uint256 creatorNewBalance = previousCreatorBalance
+            + collection.computeShare(
+                IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.CREATOR
+            );
+        uint256 platformNewBalance = previousPlatformBalance
+            + collection.computeShare(
+                IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.PLATFORM
+            );
         console.log("Creator new balance: ", creatorNewBalance);
         console.log("Platform new balance: ", platformNewBalance);
         assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
@@ -256,6 +269,19 @@ contract ERC721CollectionTest is Test {
         vm.startPrank(marketPlace);
         collection.safeTransferFrom(minter1, address(789), 1);
         collection.safeTransferFrom(minter2, address(789), 4);
+        vm.stopPrank();
+    }
+
+    function testEditAndRemovePhase() public {
+        vm.startPrank(creator);
+        collection.addPresalePhase(presalePhaseConfig1);
+        collection.addPresalePhase(presalePhaseConfig1);
+        assertEq(collection.getPresaleConfig().length, 2);
+        collection.editPresalePhaseConfig(1, presalePhaseConfig2);
+        assertEq(collection.getPresaleConfig()[1].name, "Test Phase 2");
+        collection.removePresalePhase(1);
+        assertEq(collection.getPresaleConfig().length, 1);
+        assertEq(collection.getPresaleConfig()[0].name, "Test Phase");
         vm.stopPrank();
     }
 }

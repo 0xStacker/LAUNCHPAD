@@ -64,6 +64,9 @@ interface IERC721Collection {
     /// @dev Thrown when a user tries to mint more than the amount they're allowed to mint from a particular phase.
     error PhaseLimitExceeded(uint8 _phaseLimit);
 
+    /// @dev Thrown when creator tries to add more presale phase than permitted.abi
+    error MaxPresaleLimitReached(uint8 _maxLimit);
+
     /**
      * @dev Thrown when creator tries to reduce supply to an amount that's either;
      * - less than the total minted tokens or less than the total supply.
@@ -116,6 +119,15 @@ interface IERC721Collection {
     /// @dev Emitted when the sale is paused.
     event SalePaused();
 
+    /// @dev Emitted when the contract ownership is changed.
+    event TransferOwnership(address _newOwner);
+
+    /// @dev Emitted when the configuration of a presale phase is changed.
+    event EditPresaleConfig(PresalePhase _oldConfig, PresalePhase _newConfig);
+
+    /// @dev Emitted when creator removes a presale phase.
+    event RemovePresalePhase(uint8 _phaseId, string _name);
+
     /**
      * @dev Public minting function.
      * @param _amount is the amount of nfts to mint.
@@ -136,15 +148,6 @@ interface IERC721Collection {
      * @dev Returns an array containing details for each presale phase
      */
     function getPresaleConfig() external view returns (PresalePhase[] memory);
-
-    /**
-     *
-     * @dev Reduce the collection supply
-     * @param _newSupply is the new supply to be set
-     * Ensures that the new supply is not less than the total minted tokens
-     *
-     */
-    function reduceSupply(uint64 _newSupply) external;
 
     /**
      * @dev Allows creator to airdrop NFTs to an account

@@ -8,21 +8,21 @@ import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {BasisPointsCalculator} from "./BpsLib.sol";
 
 /**
- * @dev Implementation of an ERC721 drop.
+ * @title Implementation of an ERC721 drop.
  * @author 0xstacker "github.com/0xStacker"
  */
 contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     /// @dev Maximum number of presale phases that can be added.
-    uint8 constant PHASELIMIT = 5;
+    uint8 constant MAX_PRESALE_LIMIT = 5;
 
     /// @dev Maximum number of tokens that can be minted in a single transaction.
     uint8 constant BATCH_MINT_LIMIT = 8;
 
-    /// @dev Collection owner
-    address public immutable owner;
-
     /// @dev Platform fee receipient
     address private immutable _FEE_RECEIPIENT;
+
+    /// @dev Collection owner
+    address public owner;
 
     /// @dev If set to true, pauses minting of tokens.
     bool public paused;
@@ -40,7 +40,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     uint64 private _totalMinted;
 
     /// @dev Percentage paid to the platform by creator
-    uint internal immutable SALES_FEE_BPS = 10_00;
+    uint256 internal immutable SALES_FEE_BPS = 10_00;
 
     string baseURI;
 
@@ -59,7 +59,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
      * @dev presale mint phases.
      * Maximum of 5 presale phases.
      */
-    PresalePhase[5] public mintPhases;
+    PresalePhase[] public mintPhases;
 
     mapping(uint8 => bool) public phaseCheck;
 
@@ -140,6 +140,13 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         _;
     }
 
+    modifier verifyPhaseId(uint8 _phaseId) {
+        if (_phaseId >= MAX_PRESALE_LIMIT) {
+            revert InvalidPhase(_phaseId);
+        }
+        _;
+    }
+
     // Allows owner to pause minting at any phase.
     modifier isPaused() {
         if (paused) {
@@ -201,6 +208,9 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
 
     /// @dev see {IERC721Collection-addPresalePhase}
     function addPresalePhase(PresalePhaseIn calldata _phase) external onlyCreator {
+        if (mintPhases.length == MAX_PRESALE_LIMIT) {
+            revert MaxPresaleLimitReached(MAX_PRESALE_LIMIT);
+        }
         PresalePhase memory phase = PresalePhase({
             name: _phase.name,
             startTime: block.timestamp + _phase.startTime,
@@ -211,17 +221,16 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
             phaseId: phaseIds
         });
 
-        mintPhases[phase.phaseId] = phase;
-        mintPhases[phase.phaseId].startTime = phase.startTime + block.timestamp;
-        mintPhases[phase.phaseId].endTime = phase.endTime + block.timestamp;
+        mintPhases.push(phase);
         phaseCheck[phase.phaseId] = true;
-        _returnablePhases.push(phase);
         phaseIds += 1;
         emit AddPresalePhase(_phase.name, phase.phaseId);
     }
 
-    /// @dev see {IERC721Collection-reduceSupply}
-
+    /**
+     * @dev Reduce the collection supply
+     * @param _newSupply is the new supply to be set
+     */
     function reduceSupply(uint64 _newSupply) external onlyCreator {
         if (_newSupply < _totalMinted || _newSupply > maxSupply) {
             revert InvalidSupplyConfig();
@@ -230,12 +239,18 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         emit SupplyReduced(_newSupply);
     }
 
-    // getter for presale phase data
+    /**
+     * @dev getter for presale phase data
+     * @return array containing presale configuration for each added phase.
+     */
     function getPresaleConfig() external view returns (PresalePhase[] memory) {
-        return _returnablePhases;
+        return mintPhases;
     }
 
-    // getter for public mint data
+    /**
+     * @dev getter for public mint data
+     * @return public mint configuration. see {IERC721Collection-PublicMint}
+     */
     function getPublicMintConfig() external view returns (PublicMint memory) {
         return _publicMint;
     }
@@ -290,6 +305,15 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     /**
+     * @dev Changes contract owener.
+     * @param _newOwner is the address of the new owner.
+     */
+    function transferOwnership(address _newOwner) external onlyCreator {
+        owner = _newOwner;
+        emit TransferOwnership(_newOwner);
+    }
+
+    /**
      *
      * @dev see {IERC721Collection-whitelistMint}
      */
@@ -321,12 +345,11 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     /// @dev see {ERC721-_burn}
-
     function burn(uint256 tokenId_) external tokenOwner(tokenId_) {
         _burn(tokenId_);
     }
 
-    // total supply
+    /// @return max supply
     function supply() external view returns (uint256) {
         return maxSupply;
     }
@@ -343,34 +366,82 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         return owner;
     }
 
-    function computeShare(MintPhase _phase, uint256 _amount, uint8 _phaseId, Payees _payee) public view returns (uint256 share) {
-        if (_payee == Payees.PLATFORM) {
-            if (_phase == MintPhase.PUBLIC){
-                uint _mintFee = mintFee * _amount;
-                uint value = _publicMint.price * _amount;
-                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
-                share = _mintFee + _salesFee;
-            }
-            else{
-                uint _mintFee = mintFee * _amount;
-                uint256 _price = mintPhases[_phaseId].price;
-                uint256 value = _price * _amount;
-                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS); 
-                share = _mintFee + _salesFee;
-            }
-
+    /**
+     * @dev Change the configuration for an added presale phase.
+     * @param _phaseId is the phase to change config.
+     * @param _newConfig is the configuration of the new phase.
+     * Adds phase if phase does not exist and _phaseId does not exceed max allowed phase.
+     *
+     */
+    function editPresalePhaseConfig(uint8 _phaseId, PresalePhaseIn memory _newConfig)
+        external
+        verifyPhaseId(_phaseId)
+        onlyCreator
+    {
+        PresalePhase memory oldPhase = mintPhases[_phaseId];
+        PresalePhase memory newPhase = PresalePhase({
+            name: _newConfig.name,
+            startTime: block.timestamp + _newConfig.startTime,
+            endTime: block.timestamp + _newConfig.endTime,
+            maxPerAddress: _newConfig.maxPerAddress,
+            price: _newConfig.price,
+            merkleRoot: _newConfig.merkleRoot,
+            phaseId: _phaseId
+        });
+        if (phaseCheck[_phaseId]) {
+            mintPhases[_phaseId] = newPhase;
         } else {
-            if (_phase == MintPhase.PUBLIC){
-                uint value = _publicMint.price * _amount;
-                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
-                share = value - _salesFee;
+            mintPhases.push(newPhase);
+            phaseCheck[_phaseId] = true;
+        }
+        emit EditPresaleConfig(oldPhase, newPhase);
+    }
+
+    function removePresalePhase(uint8 _phaseId) external verifyPhaseId(_phaseId) onlyCreator {
+        PresalePhase[] memory oldList = mintPhases;
+        uint256 totalItems = oldList.length;
+        phaseCheck[_phaseId] = false;
+        delete mintPhases;
+        for (uint8 i; i < totalItems; i++) {
+            if (i < _phaseId) {
+                mintPhases.push(oldList[i]);
+            } else if (i > _phaseId) {
+                uint8 newId = i - 1;
+                oldList[i].phaseId = newId;
+                mintPhases.push(oldList[i]);
             }
-            else{
+        }
+    }
+
+    function computeShare(MintPhase _phase, uint256 _amount, uint8 _phaseId, Payees _payee)
+        public
+        view
+        returns (uint256 share)
+    {
+        if (_payee == Payees.PLATFORM) {
+            if (_phase == MintPhase.PUBLIC) {
+                uint256 _mintFee = mintFee * _amount;
+                uint256 value = _publicMint.price * _amount;
+                uint256 _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
+                share = _mintFee + _salesFee;
+            } else {
+                uint256 _mintFee = mintFee * _amount;
                 uint256 _price = mintPhases[_phaseId].price;
                 uint256 value = _price * _amount;
-                uint _salesFee = (value).calculatePercentage(SALES_FEE_BPS); 
+                uint256 _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
+                share = _mintFee + _salesFee;
+            }
+        } else {
+            if (_phase == MintPhase.PUBLIC) {
+                uint256 value = _publicMint.price * _amount;
+                uint256 _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
                 share = value - _salesFee;
-            }            
+            } else {
+                uint256 _price = mintPhases[_phaseId].price;
+                uint256 value = _price * _amount;
+                uint256 _salesFee = (value).calculatePercentage(SALES_FEE_BPS);
+                share = value - _salesFee;
+            }
         }
     }
 
@@ -393,8 +464,9 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     /**
-     * @dev Compute the cost of minting a certain amount of tokens.
+     * @dev Compute the cost of minting a certain amount of tokens at a certain mint phase
      * @param _amount is the amount of tokens to be minted.
+     * @return cost of token with mint fee included.
      */
     function _getCost(MintPhase _phase, uint8 _phaseId, uint256 _amount) public view returns (uint256 cost) {
         if (_phase == MintPhase.PUBLIC) {
@@ -442,6 +514,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         _totalMinted = totalMintedInc;
     }
 
+    /// @return total nft minted
     function totalMinted() public view returns (uint64) {
         return _totalMinted;
     }
