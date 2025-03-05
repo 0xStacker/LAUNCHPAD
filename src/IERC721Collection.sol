@@ -92,6 +92,9 @@ interface IERC721Collection {
     /// @dev Thrown when creator tries to airdrop a set number of people and the number exceeds the allowed limit.
     error AmountTooHigh();
 
+    /// @dev Thrown when creator tries to set royalty receipient to an invalid address or to a value greater than allowed.
+    error InvalidRoyaltyConfig(address receiver, uint256 _royaltyFeeBps);
+
     /// @dev Emitted after adding a new presale phase to the collection.
     event AddPresalePhase(string _phaseName, uint8 _phaseId);
 

@@ -3,6 +3,8 @@ pragma solidity 0.8.25;
 
 import {ERC721} from "@openzeppelin/token/ERC721/ERC721.sol";
 import {IERC721Collection} from "./IERC721Collection.sol";
+import {IERC2981} from "@openzeppelin/interfaces/IERC2981.sol";
+import {IERC165, ERC165} from "@openzeppelin/utils/introspection/ERC165.sol";
 import {MerkleProof} from "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {BasisPointsCalculator} from "./BpsLib.sol";
@@ -11,7 +13,7 @@ import {BasisPointsCalculator} from "./BpsLib.sol";
  * @title Implementation of an ERC721 drop.
  * @author 0xstacker "github.com/0xStacker"
  */
-contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
+contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
     /// @dev Maximum number of presale phases that can be added.
     uint8 constant MAX_PRESALE_LIMIT = 5;
 
@@ -21,8 +23,11 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     /// @dev Platform fee receipient
     address private immutable _FEE_RECEIPIENT;
 
-    /// @dev Collection owner
+    /// @notice Collection owner.
     address public owner;
+
+    /// @notice Royalty fee receipient. defaults to owner address if not set on contract deployment.
+    address public royaltyFeeReceiver;
 
     /// @dev If set to true, pauses minting of tokens.
     bool public paused;
@@ -41,6 +46,12 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
 
     /// @dev Percentage paid to the platform by creator
     uint256 internal immutable SALES_FEE_BPS = 10_00;
+
+    /// @dev Royalty fee bps
+    uint256 internal royaltyFeeBps;
+
+    /// @dev Maximum allowed royalty fee
+    uint256 constant MAX_ROYALTY_FEE = 10_00;
 
     string baseURI;
 
@@ -62,8 +73,6 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     PresalePhase[] public mintPhases;
 
     mapping(uint8 => bool) public phaseCheck;
-
-    PresalePhase[] internal _returnablePhases;
 
     using MerkleProof for bytes32[];
     using BasisPointsCalculator for uint256;
@@ -88,7 +97,9 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         address _owner,
         string memory _baseUri,
         address _feeReceipient,
-        bool _lockedTillMintOut
+        bool _lockedTillMintOut,
+        uint _royaltyFeeBps,
+        address _royaltyFeeReceiver
     ) ERC721(_name, _symbol) ReentrancyGuard() {
         maxSupply = _maxSupply;
         // Ensure that owner is not a contract
@@ -102,6 +113,10 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         mintFee = _mintFee;
         _publicMint = _publicMintConfig;
         baseURI = _baseUri;
+        if(_royaltyFeeReceiver == address(0)){
+            royaltyFeeReceiver = _owner;
+        }
+        royaltyFeeBps = _royaltyFeeBps;
         lockedTillMintOut = _lockedTillMintOut;
     }
 
@@ -224,7 +239,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         mintPhases.push(phase);
         phaseCheck[phase.phaseId] = true;
         phaseIds += 1;
-        emit AddPresalePhase(_phase.name, phase.phaseId);
+        emit AddPresalePhase(_phase.name, phase.phaseId); 
     }
 
     /**
@@ -305,7 +320,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     }
 
     /**
-     * @dev Changes contract owener.
+     * @dev Changes contract owner.
      * @param _newOwner is the address of the new owner.
      */
     function transferOwnership(address _newOwner) external onlyCreator {
@@ -397,7 +412,14 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         emit EditPresaleConfig(oldPhase, newPhase);
     }
 
+    /**
+     * @dev Remove a presale phase from the collection.
+     * @param _phaseId is the phase to be removed.
+     * @notice Only possible if phase is not already live.
+     */
+
     function removePresalePhase(uint8 _phaseId) external verifyPhaseId(_phaseId) onlyCreator {
+        require(mintPhases[_phaseId].startTime > block.timestamp, "Phase Live");
         PresalePhase[] memory oldList = mintPhases;
         uint256 totalItems = oldList.length;
         phaseCheck[_phaseId] = false;
@@ -413,6 +435,15 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
         }
     }
 
+    /**
+     * @dev Calculates the share of the platform and creator from a minted token.
+     * @param _phase is the mint phase of the token || Public or Presale.
+     * @param _amount is the amount of tokens minted.
+     * @param _phaseId is the phase id of the mint phase if it was minted on presale
+     * @param _payee The party to be paid || Platform or Creator.
+     * @return share of the platform or creator.
+     * @notice The Platform share is calculated as the sum of mint fee for the amount of tokens minted and sales fee on each token.
+     */
     function computeShare(MintPhase _phase, uint256 _amount, uint8 _phaseId, Payees _payee)
         public
         view
@@ -443,6 +474,37 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
                 share = value - _salesFee;
             }
         }
+    }
+
+    /**
+     * @dev See {IERC2981-royaltyInfo}
+     */
+    function royaltyInfo(
+        uint256 tokenId,
+        uint256 salePrice
+    ) external view returns (address receiver, uint256 royaltyAmount){
+        address _tokenOwner = _requireOwned(tokenId);
+        if(_tokenOwner == address(0)){
+            revert ERC721NonexistentToken(tokenId);
+        }
+        return (royaltyFeeReceiver, salePrice.calculatePercentage(royaltyFeeBps));
+    }
+
+    /**
+     * @dev Allows creator to change royalty info.
+     * @param receiver is the address of the new royalty fee receiver.
+     * @param _royaltyFeeBps is the new royalty fee bps| 100bps= 1%
+     */
+
+    function setRoyaltyInfo(address receiver, uint _royaltyFeeBps) external onlyCreator {
+        if(receiver == address(0)){
+            revert InvalidRoyaltyConfig(receiver, _royaltyFeeBps);
+        }
+        if(_royaltyFeeBps > MAX_ROYALTY_FEE){
+            revert InvalidRoyaltyConfig(receiver, _royaltyFeeBps);
+        }
+        royaltyFeeReceiver = receiver;
+        royaltyFeeBps = _royaltyFeeBps;
     }
 
     ///@dev see {ERC721-_baseURI}
@@ -533,5 +595,9 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard {
     /// @dev see {ERC721-transferFrom}
     function transferFrom(address from, address to, uint256 tokenId) public override canTradeToken {
         super.transferFrom(from, to, tokenId);
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC165, IERC165) returns (bool) {
+        return interfaceId == type(IERC2981).interfaceId || interfaceId == type(IERC721Collection).interfaceId || super.supportsInterface(interfaceId);
     }
 }
