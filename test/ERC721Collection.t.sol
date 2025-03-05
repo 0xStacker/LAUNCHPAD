@@ -48,7 +48,9 @@ contract ERC721CollectionTest is Test {
             creator,
             "https://example.com/",
             platform,
-            lockedTillMintOut
+            lockedTillMintOut,
+            100,
+            address(0)
         );
     }
 
