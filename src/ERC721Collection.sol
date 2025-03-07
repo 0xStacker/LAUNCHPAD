@@ -1,39 +1,38 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.25;
-
-import {ERC721} from "@openzeppelin/token/ERC721/ERC721.sol";
 import {IERC721Collection} from "./IERC721Collection.sol";
 import {IERC2981} from "@openzeppelin/interfaces/IERC2981.sol";
-import {IERC165, ERC165} from "@openzeppelin/utils/introspection/ERC165.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {IERC165} from "@openzeppelin/utils/introspection/ERC165.sol";
 import {MerkleProof} from "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
 import {BasisPointsCalculator} from "./BpsLib.sol";
+import {ERC721URIStorage} from "@openzeppelin/token/ERC721/extensions/ERC721URIStorage.sol";
 
 /**
  * @title Implementation of an ERC721 drop.
  * @author 0xstacker "github.com/0xStacker"
  */
-contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
+contract Drop is ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
     /// @dev Maximum number of presale phases that can be added.
     uint8 constant MAX_PRESALE_LIMIT = 5;
 
     /// @dev Maximum number of tokens that can be minted in a single transaction.
     uint8 constant BATCH_MINT_LIMIT = 8;
 
-    /// @dev Platform fee receipient
-    address private immutable _FEE_RECEIPIENT;
-
-    /// @notice Collection owner.
-    address public owner;
-
-    /// @notice Royalty fee receipient. defaults to owner address if not set on contract deployment.
-    address public royaltyFeeReceiver;
-
     /// @dev If set to true, pauses minting of tokens.
     bool public paused;
 
     /// @dev If set to true, prevents trading of tokens until minting is complete.
-    bool public lockedTillMintOut;
+    bool public tradingLocked;
+
+    /**
+     * @dev Set to false to conceal token URIs.
+     * @notice If set to false, token URIs will not be revealed until creator reveals.
+     * @notice All token URIs will default to the baseURI, so the base URI would hold the concealed data.
+     * @notice A new baseURI will be set during reveal.
+    */
+    bool public revealed = true;
 
     /// @notice Maximum supply of collection
     uint64 public maxSupply;
@@ -44,8 +43,20 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
     /// @notice Total number of minted tokens
     uint64 private _totalMinted;
 
+    /// @dev Platform fee receipient
+    address private immutable _FEE_RECEIPIENT;
+
+    /// @notice Sale proceed collector. Defaults to owner address if not set on deployment.
+    address proceedCollector;
+
+    /// @notice Collection owner.
+    address public owner;
+
+    /// @notice Royalty fee receipient. defaults to owner address if not set on deployment.
+    address public royaltyFeeReceiver;
+
     /// @dev Percentage paid to the platform by creator
-    uint256 internal immutable SALES_FEE_BPS = 10_00;
+    uint256 internal immutable SALES_FEE_BPS;
 
     /// @dev Royalty fee bps
     uint256 internal royaltyFeeBps;
@@ -53,7 +64,7 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
     /// @dev Maximum allowed royalty fee
     uint256 constant MAX_ROYALTY_FEE = 10_00;
 
-    string baseURI;
+    string public baseURI;
 
     /**
      * @dev Fee paid to the platform per nft mint by user
@@ -79,45 +90,38 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
 
     /**
      * @dev Initialize contract by setting necessary data.
-     * @param _name is the name of the collection.
-     * @param _symbol is the collection symbol.
-     * @param _maxSupply is the maximum supply of the collection.
-     * @param _owner is the address of the collection owner
-     * @param _publicMintConfig is the public mint configuration.
-     * @param _mintFee is the platform mint fee
-     * @param _baseUri is the base uri for the collection.
-     * @param _feeReceipient is the platform fee receipient.
+     * @param _collection holds all collection related data. see {IERC721Collection-Collection}
+     * @param _platform Holds all platform related data. see {IERC721Collection-Platform}
+     * @param _publicMintConfig Is the public mint configuration for collection. see{IERC721Collection-PublicMint}
      */
     constructor(
-        string memory _name,
-        string memory _symbol,
-        uint64 _maxSupply,
+        Collection memory _collection,
         PublicMint memory _publicMintConfig,
-        uint256 _mintFee,
-        address _owner,
-        string memory _baseUri,
-        address _feeReceipient,
-        bool _lockedTillMintOut,
-        uint _royaltyFeeBps,
-        address _royaltyFeeReceiver
-    ) ERC721(_name, _symbol) ReentrancyGuard() {
-        maxSupply = _maxSupply;
+        Platform memory _platform
+    ) ERC721(_collection.name, _collection.symbol) ReentrancyGuard() {
+        maxSupply = _collection.maxSupply;
         // Ensure that owner is not a contract
-        require(_owner.code.length == 0 && _owner != address(0), "Invalid Adress");
-        owner = _owner;
-
-        if (_feeReceipient == address(0)) {
+        require(_collection.owner.code.length == 0 && _collection.owner != address(0), "Invalid Adress");
+        owner = _collection.owner;
+        if (_platform.feeReceipient == address(0)) {
             revert ERC721InvalidReceiver(address(0));
         }
-        _FEE_RECEIPIENT = _feeReceipient;
-        mintFee = _mintFee;
+        _FEE_RECEIPIENT = _platform.feeReceipient;
+        mintFee = _platform.mintFee;
         _publicMint = _publicMintConfig;
-        baseURI = _baseUri;
-        if(_royaltyFeeReceiver == address(0)){
-            royaltyFeeReceiver = _owner;
+        if(_collection.royaltyReceipient == address(0)){
+            royaltyFeeReceiver = _collection.owner;
         }
-        royaltyFeeBps = _royaltyFeeBps;
-        lockedTillMintOut = _lockedTillMintOut;
+        if (_collection.proceedCollector == address(0)){
+            proceedCollector = _collection.owner;
+        }
+        if (!_collection.revealed){
+            revealed = false;
+        }
+        baseURI = _collection.baseURI;
+        royaltyFeeBps = _collection.royaltyFeeBps;
+        SALES_FEE_BPS = _platform.salesFeeBps;
+        tradingLocked = _collection.tradingLocked;
     }
 
     receive() external payable {}
@@ -189,15 +193,21 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
     }
 
     /**
-     * @dev Control token treading
-     * @notice Prevents trading of tokens until minting is complete if {lockedTillMintOut} is set to true.
+     * @dev Control token trading
+     * @notice Prevents trading of tokens until unlocked by creator.
      */
     modifier canTradeToken() {
-        bool mintedOut = maxSupply == _totalMinted;
-        if (lockedTillMintOut && !mintedOut) {
+        if (tradingLocked) {
             revert TradingLocked();
         }
         _;
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view override(IERC165, ERC721) returns (bool) {
+        return 
+            interfaceId == type(IERC2981).interfaceId ||
+            interfaceId == type(IERC721Collection).interfaceId ||
+            super.supportsInterface(interfaceId);
     }
 
     /// @dev see {IERC721Collection-mintPublic}
@@ -412,11 +422,7 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
         emit EditPresaleConfig(oldPhase, newPhase);
     }
 
-    /**
-     * @dev Remove a presale phase from the collection.
-     * @param _phaseId is the phase to be removed.
-     * @notice Only possible if phase is not already live.
-     */
+    /// @dev see {IERC721Collection-removePresalePhase}
 
     function removePresalePhase(uint8 _phaseId) external verifyPhaseId(_phaseId) onlyCreator {
         require(mintPhases[_phaseId].startTime > block.timestamp, "Phase Live");
@@ -507,10 +513,27 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
         royaltyFeeBps = _royaltyFeeBps;
     }
 
+    function unlockTrading() external onlyCreator{
+        tradingLocked = false;
+    }
+
+    function reveal(string memory _originalURI) external onlyCreator{
+        revealed = true;
+        baseURI = _originalURI;
+    }
+
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        if(!revealed){
+            return baseURI;
+        }
+        return super.tokenURI(tokenId);
+    }
+
     ///@dev see {ERC721-_baseURI}
     function _baseURI() internal view override returns (string memory) {
         return baseURI;
     }
+
 
     /**
      * @dev Checks if a certain amount of token can be minted.
@@ -546,14 +569,13 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
      */
     function _payout(MintPhase _phase, uint256 _amount, uint8 _phaseId) internal {
         address platform = _FEE_RECEIPIENT;
-        address creator = owner;
         uint256 platformShare = computeShare(_phase, _amount, 0, Payees.PLATFORM);
         uint256 creatorShare = computeShare(_phase, _amount, _phaseId, Payees.CREATOR);
         (bool payPlatform,) = payable(platform).call{value: platformShare}("");
         if (!payPlatform) {
             revert PurchaseFailed();
         }
-        (bool payCreator,) = payable(creator).call{value: creatorShare}("");
+        (bool payCreator,) = payable(proceedCollector).call{value: creatorShare}("");
         if (!payCreator) {
             revert PurchaseFailed();
         }
@@ -595,9 +617,5 @@ contract Drop is ERC165, ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
     /// @dev see {ERC721-transferFrom}
     function transferFrom(address from, address to, uint256 tokenId) public override canTradeToken {
         super.transferFrom(from, to, tokenId);
-    }
-
-    function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC165, IERC165) returns (bool) {
-        return interfaceId == type(IERC2981).interfaceId || interfaceId == type(IERC721Collection).interfaceId || super.supportsInterface(interfaceId);
     }
 }
