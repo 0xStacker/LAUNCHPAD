@@ -371,6 +371,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
 
     /// @dev see {ERC721-_burn}
     function burn(uint256 tokenId_) external tokenOwner(tokenId_) {
+        maxSupply -= 1;
         _burn(tokenId_);
     }
 
@@ -379,7 +380,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
         return maxSupply;
     }
 
-    function setBaseURI(string memory _uri) external onlyCreator {
+    function _setBaseURI(string memory _uri) internal{
         baseURI = _uri;
     }
 
@@ -519,7 +520,7 @@ contract Drop is ERC721, IERC721Collection, ReentrancyGuard, IERC2981{
 
     function reveal(string memory _originalURI) external onlyCreator{
         revealed = true;
-        baseURI = _originalURI;
+        _setBaseURI(_originalURI);
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
