@@ -46,7 +46,7 @@ contract ERC721CollectionTest is Test {
     });
 
     IERC721Collection.Collection collectionConfig1 = IERC721Collection.Collection({
-        tradingLocked: false,
+        tradingLocked: true,
         revealed: false,
         maxSupply: 100,
         owner: creator,
@@ -58,28 +58,9 @@ contract ERC721CollectionTest is Test {
         royaltyFeeBps: 500
     });
 
-    IERC721Collection.Collection collectionConfig2 = IERC721Collection.Collection({
-        tradingLocked: true,
-        revealed: true,
-        maxSupply: 100,
-        owner: creator,
-        proceedCollector: address(0),
-        royaltyReceipient: address(0),
-        name: "Test Collection 2",
-        symbol: "TST2",
-        baseURI: "https://example2.com/",
-        royaltyFeeBps: 500
-    });
-
     function setUp() public {
         collection = new Drop(
             collectionConfig1,
-            publicMintConfig,
-            platform
-        );
-
-        collection2 = new Drop(
-            collectionConfig2,
             publicMintConfig,
             platform
         );
@@ -280,19 +261,21 @@ contract ERC721CollectionTest is Test {
         _mintWhitelist(minter, 3, 0, 180);
     }
 
-    function testFail_TradeWhileNotSoldOut() public {
+    function testFail_TradeWhileNotUnlocked() public {
         address minter = address(345);
         deal(minter, 350);
         _mintPublic(collection, minter, 1, singleMintCost);
         collection.safeTransferFrom(minter, address(456), 1);
     }
 
-    function testTradingAfterSoldOut() public {
+    function testTradingAfterUnlocked() public {
         address minter1 = address(345);
         address minter2 = address(456);
         address marketPlace = address(789);
         deal(minter1, 350);
         deal(minter2, 350);
+        vm.prank(creator);
+        collection.unlockTrading();
         _mintPublic(collection, minter1, 2, singleMintCost * 2);
         _mintPublic(collection, minter2, 2, singleMintCost * 2);
         vm.prank(minter1);
@@ -359,5 +342,12 @@ contract ERC721CollectionTest is Test {
         assertEq(collection.balanceOf(minter), 0);
         assertEq(collection.totalMinted(), 1);
         assertEq(collection.maxSupply(), 99);
+    }
+
+    function testSetRoyaltyInfo() public {
+        assertEq(collection.royaltyFeeReceiver(), creator);
+        vm.prank(creator);
+        collection.setRoyaltyInfo(address(456), 1000);
+        assertEq(collection.royaltyFeeReceiver(), address(456));
     }
 }
