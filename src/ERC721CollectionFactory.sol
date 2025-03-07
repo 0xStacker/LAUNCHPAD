@@ -4,12 +4,17 @@ pragma solidity 0.8.25;
 import {IERC721Collection} from "./IERC721Collection.sol";
 import {Drop} from "./ERC721Collection.sol";
 
-contract ERC721Factory {
-    address internal feeReceiver;
-    address admin;
+contract ERC721CollectionFactory {
+    uint64 public platformSalesFeeBps;
+    address public feeReceiver;
+    address public admin;
+    uint256 public platformMintFee;
+    mapping(address _creator => address[] _collection) public collections;    
 
-    constructor(address _feeReceiver) {
-        feeReceiver = _feeReceiver;
+    constructor(address _initialFeeReceiver, uint _initialPlatformMintFee, uint64 _initialPlatformSalesFeeBps) {
+        feeReceiver = _initialFeeReceiver;
+        platformMintFee = _initialPlatformMintFee;
+        platformSalesFeeBps = _initialPlatformSalesFeeBps;
         admin = msg.sender;
     }
 
@@ -20,14 +25,19 @@ contract ERC721Factory {
 
     function createCollection(
         IERC721Collection.Collection memory _collection,
-        IERC721Collection.PublicMint memory _publicMint,
-        IERC721Collection.Platform memory _platform
+        IERC721Collection.PublicMint memory _publicMint
     ) external returns (address) {
+        IERC721Collection.Platform memory platform = IERC721Collection.Platform({
+            feeReceipient: feeReceiver,
+            mintFee: platformMintFee,
+            salesFeeBps: platformSalesFeeBps
+        });
         Drop collection = new Drop(
             _collection,
             _publicMint,
-            _platform
+            platform
             );
+        collections[msg.sender].push(address(collection));
         return address(collection);
     }
 
@@ -40,7 +50,15 @@ contract ERC721Factory {
         admin = _admin;
     }
 
-    function getFeeReceiver() external view returns (address) {
-        return feeReceiver;
+    function setPlatformSalesFeBps(uint8 _newBps) external onlyAdmin{
+        platformSalesFeeBps = _newBps;
+    }
+
+    function setPlatformMintFee(uint _newFee) external onlyAdmin{
+        platformMintFee = _newFee;
+    }
+
+    function getCreatorCollections(address _creator) external view returns (address[] memory) {
+        return collections[_creator];
     }
 }
