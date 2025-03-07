@@ -13,6 +13,27 @@ interface IERC721Collection {
         PRESALE
     }
 
+
+    ///@dev Collection details
+    struct Collection {
+        bool tradingLocked;
+        bool revealed;
+        uint64 maxSupply;
+        address owner;
+        address proceedCollector;
+        address royaltyReceipient;
+        string name;
+        string symbol;
+        string baseURI;
+        uint256 royaltyFeeBps;
+    }
+
+    struct Platform{
+        address feeReceipient;
+        uint256 mintFee;
+        uint256 salesFeeBps;
+    }
+
     /// @dev Holds the input data for presale configuration
     struct PresalePhaseIn {
         uint8 maxPerAddress;
@@ -64,7 +85,7 @@ interface IERC721Collection {
     /// @dev Thrown when a user tries to mint more than the amount they're allowed to mint from a particular phase.
     error PhaseLimitExceeded(uint8 _phaseLimit);
 
-    /// @dev Thrown when creator tries to add more presale phase than permitted.abi
+    /// @dev Thrown when creator tries to add more presale phase than permitted.
     error MaxPresaleLimitReached(uint8 _maxLimit);
 
     /**
@@ -146,6 +167,14 @@ interface IERC721Collection {
      * @notice phases are identified sequentially using numbers, starting from 1.
      */
     function addPresalePhase(PresalePhaseIn calldata _phase) external;
+
+    /**
+     * @dev Remove a presale phase from the collection.
+     * @param _phaseId is the phase to be removed.
+     * @notice Only possible if phase is not already live.
+     */
+
+    function removePresalePhase(uint8 _phaseId) external;
 
     /**
      * @dev Returns an array containing details for each presale phase
