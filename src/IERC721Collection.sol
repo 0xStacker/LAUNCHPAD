@@ -98,9 +98,6 @@ interface IERC721Collection {
     /// @dev Thrown whenever a purchase is attempted and fails.
     error PurchaseFailed();
 
-    /// @dev Thrown when a user tries to execute a function that is only allowed to be called by the creator.
-    error NotCreator();
-
     /// @dev Thrown when a user tries to execute a function that is only allowed to be called by the nft token owner.
     error NotOwner(uint256 _tokenId);
 
@@ -142,9 +139,6 @@ interface IERC721Collection {
 
     /// @dev Emitted when the sale is paused.
     event SalePaused();
-
-    /// @dev Emitted when the contract ownership is changed.
-    event TransferOwnership(address _newOwner);
 
     /// @dev Emitted when the configuration of a presale phase is changed.
     event EditPresaleConfig(PresalePhase _oldConfig, PresalePhase _newConfig);
@@ -207,7 +201,4 @@ interface IERC721Collection {
      * @notice If amount exceeds the phase limit, function reverts.
      */
     function whitelistMint(bytes32[] memory _proof, uint8 _amount, uint8 _phaseId) external payable;
-
-    /// @dev Returns creator of the collection.
-    function contractOwner() external view returns (address);
 }
