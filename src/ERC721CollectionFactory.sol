@@ -19,17 +19,15 @@ contract ERC721Factory {
     }
 
     function createCollection(
-        string memory _name,
-        string memory _symbol,
-        uint64 _maxSupply,
-        uint256 _mintFee,
+        IERC721Collection.Collection memory _collection,
         IERC721Collection.PublicMint memory _publicMint,
-        string memory _baseURI,
-        bool _lockedTillMintOut
+        IERC721Collection.Platform memory _platform
     ) external returns (address) {
         Drop collection = new Drop(
-            _name, _symbol, _maxSupply, _publicMint, _mintFee, msg.sender, _baseURI, feeReceiver, _lockedTillMintOut
-        );
+            _collection,
+            _publicMint,
+            _platform
+            );
         return address(collection);
     }
 
