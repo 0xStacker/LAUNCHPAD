@@ -58,4 +58,5 @@ contract FactoryTest is Test{
         factory.setPlatformSalesFeBps(20);
         assertEq(factory.platformSalesFeeBps(), 20);
     }
+
 }

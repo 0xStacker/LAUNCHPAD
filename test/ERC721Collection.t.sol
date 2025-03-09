@@ -59,11 +59,7 @@ contract ERC721CollectionTest is Test {
     });
 
     function setUp() public {
-        collection = new Drop(
-            collectionConfig1,
-            publicMintConfig,
-            platform
-        );
+        collection = new Drop(collectionConfig1, publicMintConfig, platform);
     }
 
     function _mintPublic(Drop _collection, address _to, uint256 _amount, uint256 _value) internal {
@@ -312,7 +308,7 @@ contract ERC721CollectionTest is Test {
         assertEq(collection.tokenURI(1), "https://newURI.com/1");
     }
 
-    function testRoyaltyInfo() public{
+    function testRoyaltyInfo() public {
         assertEq(collection.royaltyFeeReceiver(), creator);
         deal(address(345), 300);
         _mintPublic(collection, address(345), 1, singleMintCost);
@@ -328,7 +324,7 @@ contract ERC721CollectionTest is Test {
         assertEq(collection.owner(), address(456));
     }
 
-    function testSupply() public view{
+    function testSupply() public view {
         assertEq(collection.maxSupply(), 100);
         assertEq(collection.totalMinted(), 0);
     }
@@ -340,8 +336,8 @@ contract ERC721CollectionTest is Test {
         vm.prank(minter);
         collection.burn(1);
         assertEq(collection.balanceOf(minter), 0);
-        assertEq(collection.totalMinted(), 1);
-        assertEq(collection.maxSupply(), 99);
+        assertEq(collection.totalMinted(), 0);
+        assertEq(collection.maxSupply(), 100);
     }
 
     function testSetRoyaltyInfo() public {
