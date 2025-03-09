@@ -2,7 +2,7 @@
 pragma solidity 0.8.25;
 
 interface IERC721Collection {
-    /// @dev payees for the collection
+    /// @dev Parties to be paid.
     enum Payees {
         PLATFORM,
         CREATOR
@@ -12,7 +12,6 @@ interface IERC721Collection {
         PUBLIC,
         PRESALE
     }
-
 
     ///@dev Collection details
     struct Collection {
@@ -28,7 +27,8 @@ interface IERC721Collection {
         uint256 royaltyFeeBps;
     }
 
-    struct Platform{
+    /// @dev Platform info.
+    struct Platform {
         address feeReceipient;
         uint256 mintFee;
         uint256 salesFeeBps;
@@ -167,7 +167,6 @@ interface IERC721Collection {
      * @param _phaseId is the phase to be removed.
      * @notice Only possible if phase is not already live.
      */
-
     function removePresalePhase(uint8 _phaseId) external;
 
     /**

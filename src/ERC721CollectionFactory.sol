@@ -9,9 +9,9 @@ contract ERC721CollectionFactory {
     address public feeReceiver;
     address public admin;
     uint256 public platformMintFee;
-    mapping(address _creator => address[] _collection) public collections;    
+    mapping(address _creator => address[] _collection) public collections;
 
-    constructor(address _initialFeeReceiver, uint _initialPlatformMintFee, uint64 _initialPlatformSalesFeeBps) {
+    constructor(address _initialFeeReceiver, uint256 _initialPlatformMintFee, uint64 _initialPlatformSalesFeeBps) {
         feeReceiver = _initialFeeReceiver;
         platformMintFee = _initialPlatformMintFee;
         platformSalesFeeBps = _initialPlatformSalesFeeBps;
@@ -32,11 +32,7 @@ contract ERC721CollectionFactory {
             mintFee: platformMintFee,
             salesFeeBps: platformSalesFeeBps
         });
-        Drop collection = new Drop(
-            _collection,
-            _publicMint,
-            platform
-            );
+        Drop collection = new Drop(_collection, _publicMint, platform);
         collections[msg.sender].push(address(collection));
         return address(collection);
     }
@@ -50,11 +46,11 @@ contract ERC721CollectionFactory {
         admin = _admin;
     }
 
-    function setPlatformSalesFeBps(uint8 _newBps) external onlyAdmin{
+    function setPlatformSalesFeBps(uint8 _newBps) external onlyAdmin {
         platformSalesFeeBps = _newBps;
     }
 
-    function setPlatformMintFee(uint _newFee) external onlyAdmin{
+    function setPlatformMintFee(uint256 _newFee) external onlyAdmin {
         platformMintFee = _newFee;
     }
 
