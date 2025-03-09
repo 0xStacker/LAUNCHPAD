@@ -7,7 +7,6 @@ import {IERC721Collection} from "../src/IERC721Collection.sol";
 
 contract ERC721CollectionTest is Test {
     Drop public collection;
-    Drop public collection2;
     address creator = address(123);
     bool lockedTillMintOut = true;
     uint256 public singleMintCost = 110;
@@ -62,44 +61,86 @@ contract ERC721CollectionTest is Test {
         collection = new Drop(collectionConfig1, publicMintConfig, platform);
     }
 
-    function _mintPublic(Drop _collection, address _to, uint256 _amount, uint256 _value) internal {
-        uint256 previousBalance = _collection.balanceOf(address(_to));
-        uint256 previousTotalMinted = _collection.totalMinted();
-        uint256 previousCreatorBalance = creator.balance;
-        console.log("Creator previous balance: ", previousCreatorBalance);
-        uint256 previousPlatformBalance = platform.feeReceipient.balance;
-        console.log("Platform previous balance: ", previousPlatformBalance);
-        vm.prank(_to);
+    function _getOldData(address _minter)
+        internal
+        view
+        returns (
+            uint256 previousMinterNftBal,
+            uint256 previousCreatorEthBal,
+            uint256 previousPlatformEthBal,
+            uint256 previousTotalMinted
+        )
+    {
+        previousMinterNftBal = collection.balanceOf(address(_minter));
+        previousTotalMinted = collection.totalMinted();
+        previousCreatorEthBal = creator.balance;
+        previousPlatformEthBal = platform.feeReceipient.balance;
+        console.log("Creator previous balance: ", previousCreatorEthBal);
+        console.log("Platform previous balance: ", previousPlatformEthBal);
+    }
 
+    function _verifyOldDataWithNew(
+        address _minter,
+        uint256 _prevMinterNftBal,
+        uint256 _amount,
+        uint256 _prevCreatorEthBal,
+        uint256 _prevPlatformEthBal,
+        uint256 _prevTotalMinted
+    ) internal view {
+        uint256 newMinterNftBal = collection.balanceOf(_minter);
+        uint256 newCreatorEthBal = _prevCreatorEthBal
+            + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.CREATOR);
+        uint256 newPlatformEthBal = _prevPlatformEthBal
+            + collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.PLATFORM);
+
+        console.log("Creator new balance: ", newCreatorEthBal);
+        console.log("Platform new balance: ", newPlatformEthBal);
+        assertEq(newMinterNftBal, _prevMinterNftBal + _amount);
+        assertEq(collection.totalMinted(), _prevTotalMinted + _amount);
+        assertEq(creator.balance, newCreatorEthBal);
+        assertEq(platform.feeReceipient.balance, newPlatformEthBal);
+    }
+
+    function _mintPublic(Drop _collection, address _to, uint256 _amount, uint256 _value) internal {
+        vm.prank(_to);
         _collection.mintPublic{value: _value}(_amount, address(_to));
-        uint256 creatorNewBalance = previousCreatorBalance
-            + _collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.CREATOR);
-        uint256 platformNewBalance = previousPlatformBalance
-            + _collection.computeShare(IERC721Collection.MintPhase.PUBLIC, _amount, 0, IERC721Collection.Payees.PLATFORM);
-        console.log("Creator new balance: ", creatorNewBalance);
-        console.log("Platform new balance: ", platformNewBalance);
-        assertEq(_collection.balanceOf(address(_to)), previousBalance + _amount);
-        assertEq(_collection.totalMinted(), previousTotalMinted + _amount);
-        assertEq(creator.balance, creatorNewBalance);
-        assertEq(platform.feeReceipient.balance, platformNewBalance);
     }
 
     function test_publicMint() public {
         address minter = address(456);
         deal(minter, 350);
+        (
+            uint256 previousMinterNftBal,
+            uint256 previousCreatorEthBal,
+            uint256 previousPlatformEthBal,
+            uint256 previousTotalMinted
+        ) = _getOldData(minter);
         _mintPublic(collection, minter, 1, singleMintCost);
+        _verifyOldDataWithNew(
+            minter, previousMinterNftBal, 1, previousCreatorEthBal, previousPlatformEthBal, previousTotalMinted
+        );
     }
 
-    function testFail_publicMintLimit() public {
+    function testRevertpublicMintLimit() public {
         address minter = address(456);
         deal(minter, 350);
+        vm.expectRevert();
         _mintPublic(collection, minter, 3, singleMintCost * 3);
     }
 
     function test_mintMultiple() public {
         address minter = address(456);
         deal(minter, 350);
+        (
+            uint256 previousMinterNftBal,
+            uint256 previousCreatorEthBal,
+            uint256 previousPlatformEthBal,
+            uint256 previousTotalMinted
+        ) = _getOldData(minter);
         _mintPublic(collection, minter, 2, singleMintCost * 2);
+        _verifyOldDataWithNew(
+            minter, previousMinterNftBal, 2, previousCreatorEthBal, previousPlatformEthBal, previousTotalMinted
+        );
     }
 
     function test_addPresale() public {
@@ -115,7 +156,7 @@ contract ERC721CollectionTest is Test {
         assertEq(collection.getPresaleConfig()[0].endTime, block.timestamp + endTimeInSec);
     }
 
-    function testFail_presaleLimit() public {
+    function testRevert_WhenPresaleLimitReached() public {
         uint256 startTimeInSec = 0;
         uint256 endTimeInSec = 100;
         IERC721Collection.PresalePhaseIn memory phase = IERC721Collection.PresalePhaseIn({
@@ -132,6 +173,7 @@ contract ERC721CollectionTest is Test {
         collection.addPresalePhase(phase);
         collection.addPresalePhase(phase);
         collection.addPresalePhase(phase);
+        vm.expectRevert();
         collection.addPresalePhase(phase);
         vm.stopPrank();
     }
@@ -162,25 +204,27 @@ contract ERC721CollectionTest is Test {
         assertEq(collection.maxSupply(), 2);
     }
 
-    function testFail_ReduceSupply() public {
+    function testRevert_ReduceSupply() public {
         vm.prank(creator);
+        vm.expectRevert(IERC721Collection.InvalidSupplyConfig.selector);
         collection.reduceSupply(150);
     }
 
-    function testFail_ReduceSupply2() public {
+    function testRevert_ReduceSupply2() public {
         vm.deal(address(789), 250);
-        vm.prank(address(789));
         _mintPublic(collection, address(789), 2, singleMintCost * 2);
         vm.prank(creator);
+        vm.expectRevert(IERC721Collection.InvalidSupplyConfig.selector);
         collection.reduceSupply(1);
         assertEq(collection.maxSupply(), 100);
     }
 
-    function testFail_MintWhilePaused() public {
+    function testRevert_MintWhilePaused() public {
         address minter = address(567);
         vm.prank(creator);
         collection.pauseSale();
         deal(minter, 350);
+        vm.expectRevert();
         _mintPublic(collection, address(567), 2, singleMintCost * 2);
     }
 
@@ -194,31 +238,11 @@ contract ERC721CollectionTest is Test {
         _mintPublic(collection, address(567), 2, singleMintCost * 2);
     }
 
-    function _mintWhitelist(address _to, uint8 _amount, uint8 _phaseId, uint256 _value) internal {
-        uint256 previousBalance = collection.balanceOf(address(_to));
-        uint256 previousTotalMinted = collection.totalMinted();
-        uint256 previousCreatorBalance = creator.balance;
-        console.log("Creator previous balance: ", previousCreatorBalance);
-        uint256 previousPlatformBalance = platform.feeReceipient.balance;
-        console.log("Platform previous balance: ", previousPlatformBalance);
+    function _mintWhitelist(address _to, uint8 _amount, uint8 _phaseId, uint256 _value, uint256 _startTime) internal {
         vm.startPrank(_to);
-        skip(collection.getPresaleConfig()[0].startTime);
+        skip(_startTime);
         collection.whitelistMint{value: _value}(proof, _amount, _phaseId);
         vm.stopPrank();
-        uint256 creatorNewBalance = previousCreatorBalance
-            + collection.computeShare(
-                IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.CREATOR
-            );
-        uint256 platformNewBalance = previousPlatformBalance
-            + collection.computeShare(
-                IERC721Collection.MintPhase.PRESALE, _amount, _phaseId, IERC721Collection.Payees.PLATFORM
-            );
-        console.log("Creator new balance: ", creatorNewBalance);
-        console.log("Platform new balance: ", platformNewBalance);
-        assertEq(collection.balanceOf(address(_to)), previousBalance + _amount);
-        assertEq(collection.totalMinted(), previousTotalMinted + _amount);
-        assertEq(creator.balance, creatorNewBalance);
-        assertEq(platform.feeReceipient.balance, platformNewBalance);
     }
 
     function testWhitelistMint() public {
@@ -227,7 +251,7 @@ contract ERC721CollectionTest is Test {
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        _mintWhitelist(minter, 1, 0, 70);
+        _mintWhitelist(minter, 1, 0, 70, collection.getPresaleConfig()[0].startTime);
     }
 
     function testWhitelistMintMultiple() public {
@@ -236,31 +260,45 @@ contract ERC721CollectionTest is Test {
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        _mintWhitelist(minter, 2, 0, 120);
+        _mintWhitelist(minter, 2, 0, 120, collection.getPresaleConfig()[0].startTime);
     }
 
-    function testFailNonWhitelistedMinter() public {
+    function testRevertNonWhitelistedMinter() public {
         address minter = address(999);
         vm.startPrank(creator);
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        _mintWhitelist(minter, 1, 0, 70);
+        (
+            uint256 previousMinterNftBal,
+            uint256 previousCreatorEthBal,
+            uint256 previousPlatformEthBal,
+            uint256 previousTotalMinted
+        ) = _getOldData(minter);
+        uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        vm.expectRevert();
+        _mintWhitelist(minter, 1, 0, 70, _startTime);
+        _verifyOldDataWithNew(
+            minter, previousMinterNftBal, 1, previousCreatorEthBal, previousPlatformEthBal, previousTotalMinted
+        );
     }
 
-    function testFailWhitelistMintLimit() public {
+    function testRevertWhitelistMintLimit() public {
         address minter = address(345);
         vm.startPrank(creator);
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        _mintWhitelist(minter, 3, 0, 180);
+        uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        vm.expectRevert();
+        _mintWhitelist(minter, 3, 0, 180, _startTime);
     }
 
-    function testFail_TradeWhileNotUnlocked() public {
+    function testRevert_TradeWhileNotUnlocked() public {
         address minter = address(345);
         deal(minter, 350);
         _mintPublic(collection, minter, 1, singleMintCost);
+        vm.expectRevert();
         collection.safeTransferFrom(minter, address(456), 1);
     }
 
