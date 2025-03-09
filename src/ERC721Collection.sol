@@ -3,8 +3,8 @@ pragma solidity 0.8.25;
 
 import {IERC721Collection} from "./IERC721Collection.sol";
 import {IERC2981} from "@openzeppelin/interfaces/IERC2981.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {Ownable} from "@openzeppelin/access/Ownable.sol";
+import {ERC721} from "@openzeppelin/token/ERC721/ERC721.sol";
 import {IERC165} from "@openzeppelin/utils/introspection/ERC165.sol";
 import {MerkleProof} from "@openzeppelin/utils/cryptography/MerkleProof.sol";
 import {ReentrancyGuard} from "@openzeppelin/utils/ReentrancyGuard.sol";
