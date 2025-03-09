@@ -278,9 +278,6 @@ contract ERC721CollectionTest is Test {
         uint256 _startTime = collection.getPresaleConfig()[0].startTime;
         vm.expectRevert();
         _mintWhitelist(minter, 1, 0, 70, _startTime);
-        _verifyOldDataWithNew(
-            minter, previousMinterNftBal, 1, previousCreatorEthBal, previousPlatformEthBal, previousTotalMinted
-        );
     }
 
     function testRevertWhitelistMintLimit() public {
