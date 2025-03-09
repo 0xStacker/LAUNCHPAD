@@ -269,12 +269,6 @@ contract ERC721CollectionTest is Test {
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        (
-            uint256 previousMinterNftBal,
-            uint256 previousCreatorEthBal,
-            uint256 previousPlatformEthBal,
-            uint256 previousTotalMinted
-        ) = _getOldData(minter);
         uint256 _startTime = collection.getPresaleConfig()[0].startTime;
         vm.expectRevert();
         _mintWhitelist(minter, 1, 0, 70, _startTime);
