@@ -124,6 +124,8 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
 
     fallback() external payable {}
 
+    ///////////////////////// MODIFIERS ////////////////////////////////////
+
     // Enforce token owner priviledges
     modifier tokenOwner(uint256 tokenId) {
         address _owner = _requireOwned(_tokenId);
@@ -191,10 +193,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         _;
     }
 
-    function supportsInterface(bytes4 interfaceId) public view override(IERC165, ERC721) returns (bool) {
-        return interfaceId == type(IERC2981).interfaceId || interfaceId == type(IERC721Collection).interfaceId
-            || super.supportsInterface(interfaceId);
-    }
+    //////////////////////////// USER MINTING FUNCTIONS //////////////////////////////////////
 
     /// @dev see {IERC721Collection-mintPublic}
     function mintPublic(uint256 _amount, address _to)
@@ -215,104 +214,6 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         _mintNft(_to, _amount);
         _payout(MintPhase.PUBLIC, _amount, 0);
         emit Purchase(_to, _tokenId, _amount);
-    }
-
-    /// @dev see {IERC721Collection-addPresalePhase}
-    function addPresalePhase(PresalePhaseIn calldata _phase) external onlyOwner {
-        if (mintPhases.length == MAX_PRESALE_LIMIT) {
-            revert MaxPresaleLimitReached(MAX_PRESALE_LIMIT);
-        }
-        PresalePhase memory phase = PresalePhase({
-            name: _phase.name,
-            startTime: block.timestamp + _phase.startTime,
-            endTime: block.timestamp + _phase.endTime,
-            maxPerAddress: _phase.maxPerAddress,
-            price: _phase.price,
-            merkleRoot: _phase.merkleRoot,
-            phaseId: phaseIds
-        });
-
-        mintPhases.push(phase);
-        phaseCheck[phase.phaseId] = true;
-        phaseIds += 1;
-        emit AddPresalePhase(_phase.name, phase.phaseId);
-    }
-
-    /**
-     * @dev Reduce the collection supply
-     * @param _newSupply is the new supply to be set
-     */
-    function reduceSupply(uint64 _newSupply) external onlyOwner {
-        if (_newSupply < _totalMinted || _newSupply > maxSupply) {
-            revert InvalidSupplyConfig();
-        }
-        maxSupply = _newSupply;
-        emit SupplyReduced(_newSupply);
-    }
-
-    /**
-     * @dev getter for presale phase data
-     * @return array containing presale configuration for each added phase.
-     */
-    function getPresaleConfig() external view returns (PresalePhase[] memory) {
-        return mintPhases;
-    }
-
-    /**
-     * @dev getter for public mint data
-     * @return public mint configuration. see {IERC721Collection-PublicMint}
-     */
-    function getPublicMintConfig() external view returns (PublicMint memory) {
-        return _publicMint;
-    }
-
-    /// @dev see {IERC721Collection-airdrop}
-    function airdrop(address _to, uint256 _amount) external onlyOwner {
-        if (!_canMint(_amount)) {
-            revert SoldOut(maxSupply);
-        }
-        _mintNft(_to, _amount);
-        emit Airdrop(_to, _tokenId, _amount);
-    }
-
-    ///@dev see {IERC721Collection-batchAirdrop}
-    function batchAirdrop(address[] calldata _receipients, uint256 _amountPerAddress) external onlyOwner {
-        if (_receipients.length > BATCH_MINT_LIMIT) {
-            revert AmountTooHigh();
-        }
-
-        uint256 totalAmount = _amountPerAddress * _receipients.length;
-        if (!_canMint(totalAmount)) {
-            revert SoldOut(maxSupply);
-        }
-        for (uint256 i; i < _receipients.length; i++) {
-            _mintNft(_receipients[i], _amountPerAddress);
-        }
-        emit BatchAirdrop(_receipients, _amountPerAddress);
-    }
-
-    // Pause mint process
-    function pauseSale() external onlyOwner {
-        paused = true;
-        emit SalePaused();
-    }
-
-    // Resume mint process
-    function resumeSale() external onlyOwner {
-        paused = false;
-        emit ResumeSale();
-    }
-
-    // Withdraw funds from contract
-    function withdraw(uint256 _amount) external onlyOwner nonReentrant {
-        if (address(this).balance < _amount) {
-            revert InsufficientFunds(_amount);
-        }
-        (bool success,) = payable(owner()).call{value: _amount}("");
-        if (!success) {
-            revert WithdrawalFailed();
-        }
-        emit WithdrawFunds(_amount);
     }
 
     /**
@@ -346,19 +247,54 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         _payout(MintPhase.PRESALE, _amount, _phaseId);
     }
 
-    /// @dev see {ERC721-_burn}
-    function burn(uint256 tokenId_) external tokenOwner(tokenId_) {
-        _totalMinted -= 1;
-        _burn(tokenId_);
+    ///////////////////////////// ADMIN/CREATOR MINTING FUNCTIONS //////////////////////////////
+
+    /// @dev see {IERC721Collection-airdrop}
+    function airdrop(address _to, uint256 _amount) external onlyOwner {
+        if (!_canMint(_amount)) {
+            revert SoldOut(maxSupply);
+        }
+        _mintNft(_to, _amount);
+        emit Airdrop(_to, _tokenId, _amount);
     }
 
-    /// @return max supply
-    function totalSupply() external view returns (uint256) {
-        return _totalMinted;
+    ///@dev see {IERC721Collection-batchAirdrop}
+    function batchAirdrop(address[] calldata _receipients, uint256 _amountPerAddress) external onlyOwner {
+        if (_receipients.length > BATCH_MINT_LIMIT) {
+            revert AmountTooHigh();
+        }
+
+        uint256 totalAmount = _amountPerAddress * _receipients.length;
+        if (!_canMint(totalAmount)) {
+            revert SoldOut(maxSupply);
+        }
+        for (uint256 i; i < _receipients.length; i++) {
+            _mintNft(_receipients[i], _amountPerAddress);
+        }
+        emit BatchAirdrop(_receipients, _amountPerAddress);
     }
 
-    function _setBaseURI(string memory _uri) internal {
-        baseURI = _uri;
+    //////////////////////////// PRESALE CONTROL ///////////////////////////////////////////
+
+    /// @dev see {IERC721Collection-addPresalePhase}
+    function addPresalePhase(PresalePhaseIn calldata _phase) external onlyOwner {
+        if (mintPhases.length == MAX_PRESALE_LIMIT) {
+            revert MaxPresaleLimitReached(MAX_PRESALE_LIMIT);
+        }
+        PresalePhase memory phase = PresalePhase({
+            name: _phase.name,
+            startTime: block.timestamp + _phase.startTime,
+            endTime: block.timestamp + _phase.endTime,
+            maxPerAddress: _phase.maxPerAddress,
+            price: _phase.price,
+            merkleRoot: _phase.merkleRoot,
+            phaseId: phaseIds
+        });
+
+        mintPhases.push(phase);
+        phaseCheck[phase.phaseId] = true;
+        phaseIds += 1;
+        emit AddPresalePhase(_phase.name, phase.phaseId);
     }
 
     /**
@@ -393,7 +329,6 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
     }
 
     /// @dev see {IERC721Collection-removePresalePhase}
-
     function removePresalePhase(uint8 _phaseId) external verifyPhaseId(_phaseId) onlyOwner {
         require(mintPhases[_phaseId].startTime > block.timestamp, "Phase Live");
         PresalePhase[] memory oldList = mintPhases;
@@ -409,6 +344,119 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
                 mintPhases.push(oldList[i]);
             }
         }
+    }
+
+    ///////////////////////////////// COLLECTION SALE CONTROL ///////////////////////////
+
+    // Pause mint process
+    function pauseSale() external onlyOwner {
+        paused = true;
+        emit SalePaused();
+    }
+
+    // Resume mint process
+    function resumeSale() external onlyOwner {
+        paused = false;
+        emit ResumeSale();
+    }
+
+    ///////////////////////////////////// SUPPLY CONTROL //////////////////////////////
+
+    /**
+     * @dev Reduce the collection supply
+     * @param _newSupply is the new supply to be set
+     */
+    function reduceSupply(uint64 _newSupply) external onlyOwner {
+        if (_newSupply < _totalMinted || _newSupply > maxSupply) {
+            revert InvalidSupplyConfig();
+        }
+        maxSupply = _newSupply;
+        emit SupplyReduced(_newSupply);
+    }
+
+    //////////////////////////////////////////////////////////////////////////////////
+
+    // Withdraw funds from contract
+    function withdraw(uint256 _amount) external onlyOwner nonReentrant {
+        if (address(this).balance < _amount) {
+            revert InsufficientFunds(_amount);
+        }
+        (bool success,) = payable(owner()).call{value: _amount}("");
+        if (!success) {
+            revert WithdrawalFailed();
+        }
+        emit WithdrawFunds(_amount);
+    }
+
+    /**
+     * @dev Allows creator to change royalty info.
+     * @param receiver is the address of the new royalty fee receiver.
+     * @param _royaltyFeeBps is the new royalty fee bps| 100bps= 1%
+     */
+    function setRoyaltyInfo(address receiver, uint256 _royaltyFeeBps) external onlyOwner {
+        if (receiver == address(0)) {
+            revert InvalidRoyaltyConfig(receiver, _royaltyFeeBps);
+        }
+        if (_royaltyFeeBps > MAX_ROYALTY_FEE) {
+            revert InvalidRoyaltyConfig(receiver, _royaltyFeeBps);
+        }
+        royaltyFeeReceiver = receiver;
+        royaltyFeeBps = _royaltyFeeBps;
+    }
+
+    /// @notice Allows creator to permit trading of nfts on secondary marketplaces.
+    function unlockTrading() external onlyOwner {
+        tradingLocked = false;
+    }
+
+    /// @dev sets the base URI of the collection to the original as defined by creator.
+    function reveal(string memory _originalURI) external onlyOwner {
+        revealed = true;
+        _setBaseURI(_originalURI);
+    }
+
+    /// @dev see {ERC721-_burn}
+    function burn(uint256 tokenId_) external tokenOwner(tokenId_) {
+        _totalMinted -= 1;
+        _burn(tokenId_);
+    }
+
+    /////////////////////////////// GENERAL GETTERS //////////////////////////////////////
+
+    /**
+     * @dev getter for presale phase data
+     * @return array containing presale configuration for each added phase.
+     */
+    function getPresaleConfig() external view returns (PresalePhase[] memory) {
+        return mintPhases;
+    }
+
+    /**
+     * @dev getter for public mint data
+     * @return public mint configuration. see {IERC721Collection-PublicMint}
+     */
+    function getPublicMintConfig() external view returns (PublicMint memory) {
+        return _publicMint;
+    }
+
+    /**
+     * @dev See {IERC2981-royaltyInfo}
+     */
+    function royaltyInfo(uint256 tokenId, uint256 salePrice)
+        external
+        view
+        returns (address receiver, uint256 royaltyAmount)
+    {
+        address _tokenOwner = _requireOwned(tokenId);
+        if (_tokenOwner == address(0)) {
+            revert ERC721NonexistentToken(tokenId);
+        }
+        return (royaltyFeeReceiver, salePrice.calculatePercentage(royaltyFeeBps));
+    }
+
+    /// @return max supply
+    function totalSupply() external view returns (uint256) {
+        return _totalMinted;
     }
 
     /**
@@ -453,50 +501,48 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
     }
 
     /**
-     * @dev See {IERC2981-royaltyInfo}
+     * @return uri for tokenID
+     *  @notice If collection is unrevealed, base URI acts as concealer till collection is revealed.
      */
-    function royaltyInfo(uint256 tokenId, uint256 salePrice)
-        external
-        view
-        returns (address receiver, uint256 royaltyAmount)
-    {
-        address _tokenOwner = _requireOwned(tokenId);
-        if (_tokenOwner == address(0)) {
-            revert ERC721NonexistentToken(tokenId);
-        }
-        return (royaltyFeeReceiver, salePrice.calculatePercentage(royaltyFeeBps));
-    }
-
-    /**
-     * @dev Allows creator to change royalty info.
-     * @param receiver is the address of the new royalty fee receiver.
-     * @param _royaltyFeeBps is the new royalty fee bps| 100bps= 1%
-     */
-    function setRoyaltyInfo(address receiver, uint256 _royaltyFeeBps) external onlyOwner {
-        if (receiver == address(0)) {
-            revert InvalidRoyaltyConfig(receiver, _royaltyFeeBps);
-        }
-        if (_royaltyFeeBps > MAX_ROYALTY_FEE) {
-            revert InvalidRoyaltyConfig(receiver, _royaltyFeeBps);
-        }
-        royaltyFeeReceiver = receiver;
-        royaltyFeeBps = _royaltyFeeBps;
-    }
-
-    function unlockTrading() external onlyOwner {
-        tradingLocked = false;
-    }
-
-    function reveal(string memory _originalURI) external onlyOwner {
-        revealed = true;
-        _setBaseURI(_originalURI);
-    }
-
-    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    function tokenURI(uint256 tokenId) public view override returns (string memory uri) {
         if (!revealed) {
             return baseURI;
         }
-        return super.tokenURI(tokenId);
+        uri = super.tokenURI(tokenId);
+    }
+
+    /// @return total nft minted
+    function totalMinted() public view returns (uint64) {
+        return _totalMinted;
+    }
+
+    ///////////////////////////////// TRANSFER CONTROL ////////////////////////////////////
+    /**
+     * @dev see {ERC721-safeTransferFrom}
+     */
+    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory _data)
+        public
+        override
+        canTradeToken
+    {
+        super.safeTransferFrom(from, to, tokenId, _data);
+    }
+
+    /// @dev see {ERC721-transferFrom}
+    function transferFrom(address from, address to, uint256 tokenId) public override canTradeToken {
+        super.transferFrom(from, to, tokenId);
+    }
+
+    /// @dev see {IERC165-supportsInterface}
+    function supportsInterface(bytes4 interfaceId) public view override(IERC165, ERC721) returns (bool) {
+        return interfaceId == type(IERC2981).interfaceId || interfaceId == type(IERC721Collection).interfaceId
+            || super.supportsInterface(interfaceId);
+    }
+
+    /////////////////////////////////////// INTERNALS ////////////////////////////////////////////////
+
+    function _setBaseURI(string memory _uri) internal {
+        baseURI = _uri;
     }
 
     ///@dev see {ERC721-_baseURI}
@@ -565,26 +611,5 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         }
         _tokenId = tokenIdInc;
         _totalMinted = totalMintedInc;
-    }
-
-    /// @return total nft minted
-    function totalMinted() public view returns (uint64) {
-        return _totalMinted;
-    }
-
-    /**
-     * @dev see {ERC721-safeTransferFrom}
-     */
-    function safeTransferFrom(address from, address to, uint256 tokenId, bytes memory _data)
-        public
-        override
-        canTradeToken
-    {
-        super.safeTransferFrom(from, to, tokenId, _data);
-    }
-
-    /// @dev see {ERC721-transferFrom}
-    function transferFrom(address from, address to, uint256 tokenId) public override canTradeToken {
-        super.transferFrom(from, to, tokenId);
     }
 }
