@@ -124,7 +124,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
 
     fallback() external payable {}
 
-    ///////////////////////// MODIFIERS ////////////////////////////////////
+///////////////////////// MODIFIERS ////////////////////////////////////
 
     // Enforce token owner priviledges
     modifier tokenOwner(uint256 tokenId) {
@@ -193,7 +193,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         _;
     }
 
-    //////////////////////////// USER MINTING FUNCTIONS //////////////////////////////////////
+    ///////////////////////// USER MINTING FUNCTIONS //////////////////////////////////
 
     /// @dev see {IERC721Collection-mintPublic}
     function mintPublic(uint256 _amount, address _to)
@@ -247,7 +247,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         _payout(MintPhase.PRESALE, _amount, _phaseId);
     }
 
-    ///////////////////////////// ADMIN/CREATOR MINTING FUNCTIONS //////////////////////////////
+    /////////////////////// ADMIN/CREATOR MINTING FUNCTIONS /////////////////////////
 
     /// @dev see {IERC721Collection-airdrop}
     function airdrop(address _to, uint256 _amount) external onlyOwner {
@@ -274,7 +274,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         emit BatchAirdrop(_receipients, _amountPerAddress);
     }
 
-    //////////////////////////// PRESALE CONTROL ///////////////////////////////////////////
+//////////////////////////// PRESALE CONTROL /////////////////////////////////////
 
     /// @dev see {IERC721Collection-addPresalePhase}
     function addPresalePhase(PresalePhaseIn calldata _phase) external onlyOwner {
@@ -346,7 +346,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         }
     }
 
-    ///////////////////////////////// COLLECTION SALE CONTROL ///////////////////////////
+    ////////////////////// COLLECTION SALE CONTROL ///////////////////////////
 
     // Pause mint process
     function pauseSale() external onlyOwner {
@@ -360,7 +360,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         emit ResumeSale();
     }
 
-    ///////////////////////////////////// SUPPLY CONTROL //////////////////////////////
+    ///////////////////////// SUPPLY CONTROL //////////////////////////////
 
     /**
      * @dev Reduce the collection supply
@@ -374,7 +374,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         emit SupplyReduced(_newSupply);
     }
 
-    //////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////
 
     // Withdraw funds from contract
     function withdraw(uint256 _amount) external onlyOwner nonReentrant {
@@ -459,6 +459,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         return _totalMinted;
     }
 
+
     /**
      * @dev Calculates the share of the platform and creator from a minted token.
      * @param _phase is the mint phase of the token || Public or Presale.
@@ -516,7 +517,7 @@ contract Drop is ERC721, IERC721Collection, Ownable, ReentrancyGuard, IERC2981 {
         return _totalMinted;
     }
 
-    ///////////////////////////////// TRANSFER CONTROL ////////////////////////////////////
+///////////////////////////////// TRANSFER CONTROL ////////////////////////////////////
     /**
      * @dev see {ERC721-safeTransferFrom}
      */
