@@ -238,9 +238,8 @@ contract ERC721CollectionTest is Test {
         _mintPublic(collection, address(567), 2, singleMintCost * 2);
     }
 
-    function _mintWhitelist(address _to, uint8 _amount, uint8 _phaseId, uint256 _value, uint256 _startTime) internal {
+    function _mintWhitelist(address _to, uint8 _amount, uint8 _phaseId, uint256 _value) internal {
         vm.startPrank(_to);
-        skip(_startTime);
         collection.whitelistMint{value: _value}(proof, _amount, _phaseId);
         vm.stopPrank();
     }
@@ -251,7 +250,9 @@ contract ERC721CollectionTest is Test {
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        _mintWhitelist(minter, 1, 0, 70, collection.getPresaleConfig()[0].startTime);
+        uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        skip(_startTime);
+        _mintWhitelist(minter, 1, 0, 70);
     }
 
     function testWhitelistMintMultiple() public {
@@ -260,7 +261,9 @@ contract ERC721CollectionTest is Test {
         collection.addPresalePhase(presalePhaseConfig1);
         vm.stopPrank();
         deal(minter, 350);
-        _mintWhitelist(minter, 2, 0, 120, collection.getPresaleConfig()[0].startTime);
+        uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        skip(_startTime);
+        _mintWhitelist(minter, 2, 0, 120);
     }
 
     function testRevertNonWhitelistedMinter() public {
@@ -270,8 +273,9 @@ contract ERC721CollectionTest is Test {
         vm.stopPrank();
         deal(minter, 350);
         uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        skip(_startTime);
         vm.expectRevert();
-        _mintWhitelist(minter, 1, 0, 70, _startTime);
+        _mintWhitelist(minter, 1, 0, 70);
     }
 
     function testRevertWhitelistMintLimit() public {
@@ -281,8 +285,9 @@ contract ERC721CollectionTest is Test {
         vm.stopPrank();
         deal(minter, 350);
         uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        skip(_startTime);
         vm.expectRevert();
-        _mintWhitelist(minter, 3, 0, 180, _startTime);
+        _mintWhitelist(minter, 3, 0, 180);
     }
 
     function testRevert_TradeWhileNotUnlocked() public {
@@ -374,5 +379,18 @@ contract ERC721CollectionTest is Test {
         vm.prank(creator);
         collection.setRoyaltyInfo(address(456), 1000);
         assertEq(collection.royaltyFeeReceiver(), address(456));
+    }
+
+    function testRevertMintWhilePhaseNotLive() public{
+        address minter = address(345);
+        vm.startPrank(creator);
+        collection.addPresalePhase(presalePhaseConfig1);
+        collection.addPresalePhase(presalePhaseConfig2);
+        vm.stopPrank();
+        uint256 _startTime = collection.getPresaleConfig()[0].startTime;
+        vm.warp(_startTime);
+        deal(minter, 300);
+        vm.expectRevert();
+        _mintWhitelist(minter, 2, 1, 120);
     }
 }
